@@ -99,5 +99,6 @@ jobs:
           php -l "$CHECK_DIR/public/index.php"
           php -l "$CHECK_DIR/bootstrap/installer.php"
           php -l "$CHECK_DIR/releases/$VERSION/public/index.php"
-          BUNDLE="$BUNDLE" bash tests/install-e2e.sh
+          # Exercise the exact files that the user downloads, not the staging folder.
+          BUNDLE="$CHECK_DIR" bash tests/install-e2e.sh
           gh release create "$VERSION" AIDrama.zip AIDrama.zip.sha256 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "AIDrama $VERSION" --generate-notes --latest
