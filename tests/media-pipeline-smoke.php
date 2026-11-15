@@ -105,7 +105,7 @@ $response=[
             'source_kind'=>'generate','voice_description'=>''],
     ],
 ];
-Http::fake(['api.openai.com/*'=>Http::response([
+Http::fake(['https://api.openai.com/*'=>Http::response([
     'choices'=>[['message'=>['content'=>json_encode($response,JSON_UNESCAPED_UNICODE)]]],
 ],200)]);
 $engine=new StoryboardEngine;
