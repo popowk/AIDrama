@@ -50,11 +50,49 @@ function fingerprints(string $d):array{
  $a=[];foreach(glob($d.'/database/migrations/*.php')?:[] as $p)$a[basename($p)]=hash_file('sha256',$p);
  ksort($a);return $a;
 }
+function validVersion(string $root,string $tag):bool{
+ if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag))return false;
+ $parent=realpath($root.'/releases');
+ $path=$root.'/releases/'.$tag;
+ if(!$parent||is_link($path))return false;
+ $dir=realpath($path);
+ if(!$dir||dirname($dir)!==$parent||basename($dir)!==$tag)return false;
+ foreach(['VERSION','vendor/autoload.php','bootstrap/app.php','public/index.php'] as $file)
+  if(!is_file($dir.'/'.$file))return false;
+ return trim((string)@file_get_contents($dir.'/VERSION'))===$tag;
+}
 function activeTag(string $root):string{
  $p=$root.'/shared/active-version';
- $value=is_file($p)?trim((string)file_get_contents($p)):'';
- if(!preg_match('~^v\d+\.\d+\.\d+$~D',$value))stop('当前活动版本标记缺失或无效');
+ $value=is_file($p)?trim((string)@file_get_contents($p)):'';
+ if(validVersion($root,$value))return $value;
+ // Recover a stale marker after the old version was removed manually.
+ $found=[];
+ foreach(glob($root.'/releases/v*',GLOB_ONLYDIR)?:[] as $path){
+  $tag=basename($path);if(validVersion($root,$tag))$found[]=$tag;
+ }
+ usort($found,static fn($a,$b)=>version_compare($b,$a));
+ if(!$found)stop('没有完整可用的版本，请解压正式 AIDrama.zip');
+ $value=$found[0];
+ switchVersion($root,$value);
+ msg('已修复旧版本指针，切换至现存完整版本：'.$value);
  return $value;
+}
+function pruneOldVersions(string $root,string $active,string $previous):void{
+ $parent=realpath($root.'/releases');
+ if(!$parent)return;
+ foreach(glob($root.'/releases/v*',GLOB_ONLYDIR)?:[] as $entry){
+  $tag=basename($entry);
+  if($tag===$active||$tag===$previous||!validVersion($root,$tag))continue;
+  $files=new RecursiveIteratorIterator(
+   new RecursiveDirectoryIterator($entry,FilesystemIterator::SKIP_DOTS),
+   RecursiveIteratorIterator::CHILD_FIRST
+  );
+  foreach($files as $file){
+   if($file->isDir()&&!$file->isLink())@rmdir($file->getPathname());
+   else @unlink($file->getPathname());
+  }
+  @rmdir($entry);
+ }
 }
 function switchVersion(string $root,string $tag):void{
  if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag)||!is_dir($root.'/releases/'.$tag))stop('目标版本无效');
@@ -148,5 +186,7 @@ try{
     }
  }
  @unlink($zipFile);@unlink($shaFile);
- msg('代码更新成功：'.$tag.'，宝塔站点根目录 '.$root.'/public');
+ // Preserve the current and previous version for rollback; delete older complete releases.
+ try{pruneOldVersions($root,$tag,$now);}catch(Throwable $cleanup){msg('旧版本清理跳过：'.get_class($cleanup));}
+ msg('代码更新成功：'.$tag.'，保留上一版回滚，宝塔站点根目录 '.$root.'/public');
 }catch(Throwable $e){fwrite(STDERR,'[ERROR] '.$e->getMessage()."\n");exit(1);}
