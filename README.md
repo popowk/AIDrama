@@ -32,8 +32,9 @@ AIDrama 是面向单用户的 PHP/Laravel 剧本、AI 分镜与资产规划平�
 在 GitHub Actions 构建并发布正式 v0.1.0 Release 后运行：
 
     curl -fL https://raw.githubusercontent.com/popowk/AIDrama/main/deploy/update.php -o /www/wwwroot/AIDrama/deploy/update.php
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php check
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply
+    chown -R www:www /www/wwwroot/AIDrama
+    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php check'
+    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
 
 首次 apply 会创建 shared/.env、shared/storage 和 releases/v0.1.0，然后因 APP_KEY 尚未设置而主动暂停切换。接下来：
 
@@ -41,14 +42,14 @@ AIDrama 是面向单用户的 PHP/Laravel 剧本、AI 分镜与资产规划平�
 2. 执行以下命令生成应用密钥，切勿在升级时重新生成：
 
        cd /www/wwwroot/AIDrama/releases/v0.1.0
-       /www/server/php/84/bin/php artisan key:generate --force
+       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan key:generate --force'
 
 3. 再执行 apply，然后初始化数据库和管理员密码：
 
-       /www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply
+       su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
        cd /www/wwwroot/AIDrama/current
-       /www/server/php/84/bin/php artisan migrate --force
-       /www/server/php/84/bin/php artisan aidrama:set-password
+       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan migrate --force'
+       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan aidrama:set-password'
 
 4. 在宝塔把网站根目录设为 /www/wwwroot/AIDrama/current/public，PHP 版本选 8.4，伪静态设置为：
 
@@ -62,19 +63,19 @@ AIDrama 是面向单用户的 PHP/Laravel 剧本、AI 分镜与资产规划平�
 
 ### 3. GitHub 自动更新
 
-每次修改代码并准备发布新版本时，把 VERSION 从 v0.1.0 改成 v0.1.1（以此类推），然后推送到 main。GitHub Actions 会生成新的正式 Release，并包括全部 PHP vendor，无需在宝塔服务器运行 composer/npm。
+每次代码推送到 main 后，GitHub Actions 会自动发布新的正式 Release，无需手动修改版本号。VERSION 只用来设定主版本和次版本，补丁版本由 Actions 构建序号自动递增；发布包自带全部 PHP vendor，不需在宝塔服务器运行 Composer/npm。
 
 宝塔「计划任务」添加 Shell 每小时执行：
 
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php apply
+    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php apply'
 
 检查新版本：
 
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php check
+    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php check'
 
 回滚代码：
 
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php rollback
+    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php rollback'
 
 更新脚本使用 GitHub 官方 Release、SHA256、ZIP 路径验证、独立版本目录及原子软链接切换。不会覆盖 shared/.env、shared/storage 或 MySQL 数据。数据库迁移文件变化时默认停止自动升级；备份数据库并审核迁移后可手动执行 apply --allow-migrations（此命令不会自动迁移数据库，须手动执行迁移）。
 
