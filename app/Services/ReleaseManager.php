@@ -262,7 +262,21 @@ class ReleaseManager
 
             if(!$newer)
                 return $this->finish($root,'done','当前版本缺失的数据表已补齐，项目数据已保留',$current);
-            $this->setState($root,'activating','正在切换正式版本',$tag);
+            $this->setState($root,'activating','正在同步网站入口并切换正式版本',$tag);
+            // Refresh the stable document-root entry on every approved update.
+            // Stage outside public/ and atomically rename, so users never receive
+            // half-written PHP code and previous releases stay addressable.
+            $entry=$dir.'/deploy/dispatcher.php';
+            if(!is_file($entry))
+                throw new RuntimeException('新版本缺少网站入口文件，拒绝切换');
+            $entryNext=$root.'/shared/.public-index-'.bin2hex(random_bytes(6));
+            if(!copy($entry,$entryNext))
+                throw new RuntimeException('无法预备网站入口文件，请检查 shared 目录权限');
+            @chmod($entryNext,0644);
+            if(!rename($entryNext,$root.'/public/index.php')) {
+                @unlink($entryNext);
+                throw new RuntimeException('无法更新网站入口，请检查 public/index.php 写入权限');
+            }
             $marker=$root.'/shared/active-version';
             $next=$root.'/shared/active-version.new-'.bin2hex(random_bytes(4));
             if(file_put_contents($next,$tag."\n",LOCK_EX)===false)
