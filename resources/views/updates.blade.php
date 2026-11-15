@@ -56,8 +56,11 @@ checkBtn.addEventListener('click',async()=>{
   document.getElementById('latest-version').textContent=data.latest;
   versionAvailable=Boolean(data.available);
   applyBtn.disabled=!versionAvailable;
-  updateState.textContent=versionAvailable?'可更新':'最新版本';
-  setMessage(versionAvailable?'检测到 '+data.latest+'，可以一键安装。':'当前已是最新正式版。');
+  applyBtn.textContent=data.migration_only?'补齐数据库结构':'一键更新';
+  updateState.textContent=versionAvailable?(data.migration_only?'数据库待迁移':'可更新'):'最新版本';
+  setMessage(data.migration_only
+    ? '当前程序版本已是最新，但还有 '+Number(data.pending_migrations||0)+' 个数据库迁移未执行。点击补齐数据库结构。'
+    : (versionAvailable?'检测到 '+data.latest+'，可以一键更新。':'当前已是最新正式版。'));
  }catch(e){setMessage('检查失败：'+e.message);versionAvailable=false;applyBtn.disabled=true;}
  finally{checkBtn.disabled=false;}
 });
