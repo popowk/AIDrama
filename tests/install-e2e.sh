@@ -2,6 +2,11 @@
 set -euo pipefail
 SMOKE="$RUNNER_TEMP/aidrama-install-e2e"
 cp -a "$BUNDLE" "$SMOKE"
+# Must start with a pristine site; the ZIP may never ship any private state.
+test ! -e "$SMOKE/shared"
+test ! -e "$SMOKE/current"
+test ! -e "$SMOKE/public/.env"
+test ! -e "$SMOKE/public/storage"
 php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306","root","aidrama-ci-only");$p->exec("CREATE DATABASE aidrama_install_e2e CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");'
 php -d disable_functions=symlink -S 127.0.0.1:18868 -t "$SMOKE/public" > "$RUNNER_TEMP/setup-server.log" 2>&1 &
 SERVER_PID=$!
@@ -41,6 +46,8 @@ test ! -e "$SMOKE/current"
 test -f "$SMOKE/shared/active-version"
 test "$(cat "$SMOKE/shared/active-version")" = "$(ls "$SMOKE/releases" | sort -V | tail -n1)"
 test -f "$SMOKE/shared/install.lock"
+test -s "$SMOKE/shared/.env"
+grep -q '^APP_KEY=base64:' "$SMOKE/shared/.env"
 test -f "$SMOKE/shared/storage/app/private/admin.hash"
 grep -q '^sha256' "$SMOKE/shared/storage/app/private/admin.hash"
 test ! -e "$SMOKE/shared/setup-token.txt"
