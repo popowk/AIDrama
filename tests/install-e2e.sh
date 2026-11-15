@@ -78,5 +78,5 @@ grep -q '检查更新' "$RUNNER_TEMP/updates.html"
 grep -q '一键更新' "$RUNNER_TEMP/updates.html"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
 grep -q 'idle' "$RUNNER_TEMP/update-state.json"
-php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$c=$p->query("SHOW TABLES LIKE \'generation_jobs\'")->fetchColumn();if(!$c)exit(1);'
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$c=$p->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=\"generation_jobs\"")->fetchColumn();if((int)$c!==1)exit(1);'
 echo "E2E install, login, text/image settings and update UI all passed"
