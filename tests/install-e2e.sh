@@ -69,6 +69,16 @@ if ! grep -qi 'location: http://127.0.0.1:18868' "$RUNNER_TEMP/login.headers" &&
   cat "$RUNNER_TEMP/login.headers"
   exit 1
 fi
+# Regression: Laravel 13 cached config MUST keep all core service providers.
+# Previous AIDrama config/app.php omitted app.providers, causing HTTP 500
+# with "Target class [view] does not exist" when config:cache was present.
+ACTIVE="$(cat "$SMOKE/shared/active-version")"
+APP_DIR="$SMOKE/releases/$ACTIVE"
+(cd "$APP_DIR" && php artisan config:cache)
+php -r '$cfg=require $argv[1];$ps=$cfg["app"]["providers"]??[];if(!in_array(\Illuminate\View\ViewServiceProvider::class,$ps,true)||!in_array(\Illuminate\Session\SessionServiceProvider::class,$ps,true)){fwrite(STDERR,"Missing Laravel default providers in config cache\n");exit(1);}' "$APP_DIR/bootstrap/cache/config.php"
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-with-cached-config.html"
+grep -q 'AIDrama' "$RUNNER_TEMP/login-with-cached-config.html"
+(cd "$APP_DIR" && php artisan config:clear)
 # Confirm both model categories and the authenticated update center are reachable.
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/settings > "$RUNNER_TEMP/models.html"
 grep -q '文本模型' "$RUNNER_TEMP/models.html"
