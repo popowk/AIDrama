@@ -140,7 +140,7 @@ try{
   $tmp=$root.'/tmp/stage-'.bin2hex(random_bytes(6));mkdirSafe($tmp);
   $z=new ZipArchive();if($z->open($zipFile)!==true||!$z->extractTo($tmp))stop('解压失败');$z->close();
   $stageRelease=$tmp.'/releases/'.$tag;
-  foreach(['VERSION','artisan','bootstrap/app.php','public/index.php','vendor/autoload.php','.env.example','public/app.css'] as $f){
+  foreach(['VERSION','artisan','bootstrap/app.php','public/index.php','vendor/autoload.php','.env.example','public/app.css','deploy/dispatcher.php'] as $f){
    if(!is_file($stageRelease.'/'.$f))stop('发行包缺少 '.$f);
   }
   if(trim((string)file_get_contents($stageRelease.'/VERSION'))!==$tag)stop('ZIP 版本与 Release 不一致');
@@ -167,6 +167,16 @@ try{
   if(!in_array('--allow-migrations',$argv,true))
    stop('数据库迁移文件已变化，自动更新暂停；备份数据库并审核迁移后，手动 apply --allow-migrations');
   msg('管理员允许迁移版本切换。本脚本不会自动执行数据库迁移。');
+ }
+ // Update the durable document-root controller from this verified release.
+ // A tmp file under private shared/ avoids exposing source during copying.
+ $entry=$dir.'/deploy/dispatcher.php';
+ if(!is_file($entry))stop('新版本缺少网站入口文件，拒绝切换');
+ $entryNext=$root.'/shared/.public-index-'.bin2hex(random_bytes(6));
+ if(!copy($entry,$entryNext))stop('无法预备网站入口');
+ chmod($entryNext,0644);
+ if(!rename($entryNext,$root.'/public/index.php')){
+  @unlink($entryNext);stop('网站入口切换失败，请检查 public/index.php 权限');
  }
  if($now)file_put_contents($root.'/previous-release',$now,LOCK_EX);
  switchVersion($root,$tag);
