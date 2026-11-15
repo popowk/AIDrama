@@ -107,6 +107,23 @@ curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-details.html"
 grep -q '创作形式' "$RUNNER_TEMP/project-details.html"
 grep -q '文案＋口播' "$RUNNER_TEMP/project-details.html"
 grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
+# Verify private client-product image upload, session gate, and preview.
+PROJECT_ID="${PROJECT_URL##*/}"
+ASSET_ID="$(php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("INSERT INTO assets (project_id,type,name,description,source_kind,image_status,created_at,updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())");$s->execute([(int)$argv[1],"prop","客户Logo","原始商标图","upload","pending"]);echo $p->lastInsertId();' "$PROJECT_ID")"
+test -n "$ASSET_ID"
+php -r '$im=imagecreatetruecolor(3,3);imagepng($im,$argv[1]);imagedestroy($im);' "$RUNNER_TEMP/client-logo.png"
+curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/logo-upload.headers" \
+  -F "_token=$PROJECT_CSRF" -F "image=@$RUNNER_TEMP/client-logo.png;type=image/png" \
+  "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/upload" \
+  -o "$RUNNER_TEMP/logo-upload.html"
+grep -qi '^Location:' "$RUNNER_TEMP/logo-upload.headers"
+curl -fsS -b "$COOKIE" "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/file" -o "$RUNNER_TEMP/private-logo.png"
+test -s "$RUNNER_TEMP/private-logo.png"
+FILE_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/file")"
+test "$FILE_ANON_CODE" = "302"
+curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-with-logo.html"
+grep -q '已上传真实参考图' "$RUNNER_TEMP/project-with-logo.html"
+
 
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
 grep -q 'idle' "$RUNNER_TEMP/update-state.json"
