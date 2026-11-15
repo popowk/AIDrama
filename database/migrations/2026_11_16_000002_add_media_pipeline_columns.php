@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     public function up(): void {
+        Schema::table('generation_jobs',function(Blueprint $t) {
+            $t->string('request_mode',16)->default('auto');
+        });
         Schema::table('projects',function(Blueprint $t) {
             $t->string('script_mode',16)->default('auto');
             $t->string('detected_mode',16)->nullable();
@@ -21,6 +24,9 @@ return new class extends Migration {
         });
     }
     public function down(): void {
+        Schema::table('generation_jobs',function(Blueprint $t) {
+            $t->dropColumn('request_mode');
+        });
         Schema::table('assets',function(Blueprint $t) {
             $t->dropColumn(['source_kind','image_status','image_started_at','image_error']);
         });
