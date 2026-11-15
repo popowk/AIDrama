@@ -86,6 +86,28 @@ grep -q '图片模型' "$RUNNER_TEMP/models.html"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates > "$RUNNER_TEMP/updates.html"
 grep -q '检查更新' "$RUNNER_TEMP/updates.html"
 grep -q '一键更新' "$RUNNER_TEMP/updates.html"
+grep -q '提示词管理' "$RUNNER_TEMP/models.html"
+grep -q 'Seedance' "$RUNNER_TEMP/models.html"
+grep -q '可灵 Kling' "$RUNNER_TEMP/models.html"
+# Exercise actual project Blade rendering and form validation, not just route listing.
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/ > "$RUNNER_TEMP/dashboard.html"
+PROJECT_CSRF="$(sed -n 's/.*name="csrf-token" content="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/dashboard.html" | head -1)"
+test -n "$PROJECT_CSRF"
+curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/project-create.headers" \
+  --data-urlencode "_token=$PROJECT_CSRF" \
+  --data-urlencode 'name=AI 口播创作测试' \
+  --data-urlencode 'script=主持人站在摄像头前介绍产品。' \
+  --data-urlencode 'style=3D国风动画' \
+  --data-urlencode 'shot_limit=15' \
+  --data-urlencode 'script_mode=mixed' \
+  http://127.0.0.1:18868/projects > "$RUNNER_TEMP/project-create.html"
+PROJECT_URL="$(sed -n 's/^[Ll]ocation: \(.*\/projects\/[0-9]*\).*/\1/p' "$RUNNER_TEMP/project-create.headers" | head -1 | tr -d '\r')"
+test -n "$PROJECT_URL"
+curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-details.html"
+grep -q '创作形式' "$RUNNER_TEMP/project-details.html"
+grep -q '画面文字' "$RUNNER_TEMP/project-details.html"
+grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
+
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
 grep -q 'idle' "$RUNNER_TEMP/update-state.json"
 php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$c=$p->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=\"generation_jobs\"")->fetchColumn();if((int)$c!==1)exit(1);'
