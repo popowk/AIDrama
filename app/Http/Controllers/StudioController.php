@@ -40,6 +40,8 @@ class StudioController
     }
     public function update(Request $request,int $id) {
         $this->project($id);
+        if(DB::table('projects')->where('id',$id)->value('status')==='generating')
+            return back()->withErrors(['script'=>'模型正在处理剧本，请完成或重试任务后再修改。']);
         $v=$request->validate([
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
@@ -49,35 +51,119 @@ class StudioController
         DB::table('projects')->where('id',$id)->update($v+['updated_at'=>now()]);
         return back()->with('ok','剧本设置已保存');
     }
-    public function generate(int $id,StoryBoardEngine $engine) {
+    public function generate(int $id) {
+        $this->project($id);
+        $created=DB::transaction(function() use($id) {
+            $project=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
+            if (!$project) abort(404);
+            $running=DB::table('generation_jobs')->where('project_id',$id)
+                ->whereIn('status',['queued','running'])->orderByDesc('id')->first();
+            if($running) {
+                $stale=($running->started_at ?? $running->created_at);
+                if($stale && \Illuminate\Support\Carbon::parse($stale)->isAfter(now()->subMinutes(8))) return false;
+                DB::table('generation_jobs')->where('id',$running->id)->update([
+                    'status'=>'failed','error_message'=>'上一任务超出等待期限，可重新提交。',
+                    'finished_at'=>now(),'updated_at'=>now(),
+                ]);
+            }
+            DB::table('generation_jobs')->insert([
+                'project_id'=>$id,'status'=>'queued','attempts'=>0,'error_message'=>null,
+                'request_script'=>$project->script,'request_style'=>$project->style,
+                'request_shot_limit'=>$project->shot_limit,
+                'created_at'=>now(),'updated_at'=>now(),
+            ]);
+            DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
+            return true;
+        });
+        return back()->with('ok',$created
+            ? '已提交文本模型生成任务。页面会显示处理状态；模型响应较慢时无需重复点击。'
+            : '已有生成任务正在处理，请查看页面任务状态。');
+    }
+    public function generationStatus(int $id) {
         $project=$this->project($id);
-        if ($project->status==='generating') return back()->withErrors(['generate'=>'已经有生成任务正在执行']);
-        DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
+        $job=DB::table('generation_jobs')->where('project_id',$id)->orderByDesc('id')->first();
+        if($job && $job->status==='running' && $job->started_at &&
+           \Illuminate\Support\Carbon::parse($job->started_at)->isBefore(now()->subMinutes(8))) {
+            DB::table('generation_jobs')->where('id',$job->id)->where('status','running')->update([
+                'status'=>'failed','finished_at'=>now(),
+                'error_message'=>'模型响应超时或处理被服务器中断，请检查接口设置后重新生成。',
+                'updated_at'=>now(),
+            ]);
+            DB::table('projects')->where('id',$id)->where('status','generating')->update([
+                'status'=>'error','updated_at'=>now(),
+            ]);
+            $job=DB::table('generation_jobs')->where('id',$job->id)->first();
+        }
+        return response()->json([
+            'project_status'=>$project->status==='generating'&&$job&&$job->status==='failed'?'error':$project->status,
+            'status'=>$job?->status??'none',
+            'attempts'=>$job?->attempts??0,
+            'error'=>$job?->status==='failed'?$job->error_message:null,
+            'created_at'=>$job?->created_at,
+            'started_at'=>$job?->started_at,
+            'finished_at'=>$job?->finished_at,
+        ]);
+    }
+    public function runGeneration(int $id,StoryboardEngine $engine) {
+        $this->project($id);
+        // Lock/claim exactly one pending job; never run concurrent model calls for one project.
+        $job=DB::table('generation_jobs')->where('project_id',$id)
+            ->orderByDesc('id')->first();
+        if(!$job) return response()->json(['status'=>'none'],404);
+        if($job->status!=='queued') return response()->json(['status'=>$job->status],202);
+        $claimed=DB::table('generation_jobs')->where('id',$job->id)
+            ->where('status','queued')->update([
+                'status'=>'running','attempts'=>DB::raw('attempts + 1'),
+                'started_at'=>now(),'updated_at'=>now(),
+            ]);
+        if(!$claimed) return response()->json(['status'=>'running'],202);
+        // PHP processing continues if the browser refreshes while waiting.
+        ignore_user_abort(true);
+        @set_time_limit(360);
         try {
-            $result=$engine->generate($project->script,$project->style,(int)$project->shot_limit);
-            DB::transaction(function() use($id,$result) {
+            $result=$engine->generate($job->request_script,$job->request_style,(int)$job->request_shot_limit);
+            DB::transaction(function() use($id,$job,$result) {
+                $current=DB::table('generation_jobs')->where('id',$job->id)->lockForUpdate()->first();
+                if(!$current || $current->status!=='running')
+                    throw new RuntimeException('此生成任务已过期，结果不会覆盖当前分镜。');
                 DB::table('shots')->where('project_id',$id)->delete();
                 DB::table('assets')->where('project_id',$id)->delete();
-                foreach ($result['shots'] as $i=>$s) {
+                foreach ($result['shots'] as $i=>$shot) {
                     DB::table('shots')->insert([
-                        'project_id'=>$id,'sequence'=>$i+1,'title'=>$s['title'],'visual'=>$s['visual'],
-                        'dialogue'=>$s['dialogue'],'action_before'=>$s['action_before'],
-                        'duration_seconds'=>$s['duration_seconds'],'prompt'=>$s['prompt'],
+                        'project_id'=>$id,'sequence'=>$i+1,'title'=>$shot['title'],
+                        'visual'=>$shot['visual'],'dialogue'=>$shot['dialogue'],
+                        'action_before'=>$shot['action_before'],
+                        'duration_seconds'=>$shot['duration_seconds'],'prompt'=>$shot['prompt'],
                         'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
-                foreach ($result['assets'] as $a) {
-                    DB::table('assets')->insert($a+[
+                foreach($result['assets'] as $asset) {
+                    DB::table('assets')->insert($asset+[
                         'project_id'=>$id,'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
+                DB::table('generation_jobs')->where('id',$job->id)->update([
+                    'status'=>'done','finished_at'=>now(),'updated_at'=>now(),
+                ]);
+                DB::table('projects')->where('id',$id)->update(['status'=>'ready','updated_at'=>now()]);
             });
-            DB::table('projects')->where('id',$id)->update(['status'=>'ready','updated_at'=>now()]);
-            return back()->with('ok','已生成 '.count($result['shots']).' 个镜头和 '.count($result['assets']).' 项资产');
+            return response()->json(['status'=>'done','shots'=>count($result['shots'])]);
         } catch(\Throwable $e) {
-            DB::table('projects')->where('id',$id)->update(['status'=>'error','updated_at'=>now()]);
+            $safe=$e instanceof RuntimeException
+                ? mb_substr($e->getMessage(),0,250)
+                : '生成过程中发生服务器错误，请检查日志或稍后重试。';
+            DB::transaction(function() use($id,$job,$safe) {
+                $changed=DB::table('generation_jobs')->where('id',$job->id)
+                    ->where('status','running')->update([
+                        'status'=>'failed','error_message'=>$safe,
+                        'finished_at'=>now(),'updated_at'=>now(),
+                    ]);
+                if($changed) DB::table('projects')->where('id',$id)->update([
+                    'status'=>'error','updated_at'=>now(),
+                ]);
+            });
             Log::warning('Storyboard generation failed',['project_id'=>$id,'exception'=>get_class($e)]);
-            return back()->withErrors(['generate'=>$e instanceof RuntimeException?$e->getMessage():'生成失败，请检查服务器日志']);
+            return response()->json(['status'=>'failed','error'=>$safe]);
         }
     }
     public function saveShot(Request $request,int $id,int $shot) {
