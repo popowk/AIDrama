@@ -8,7 +8,7 @@
 
 1. 在宝塔新建站点，PHP 版本设为 8.4，网站目录填写 **`/www/wwwroot/AIDrama/public`**（网站运行根目录为 public，不是 AIDrama，也不是 current/public）。启用 HTTPS。
 2. 将 `AIDrama.zip` 上传到 `/www/wwwroot/AIDrama/` 并在该目录解压。解压后应存在 `/www/wwwroot/AIDrama/public/index.php` 和 `/www/wwwroot/AIDrama/releases/vX.Y.Z/`。
-3. 在宝塔创建一个**空 MySQL 数据库**及独立账号，记下其账号和密码。
+3. 在宝塔创建一个**空 MySQL 数据库**及独立账号，记下其账号和密码。管理员密码不限制长度和复杂度，只要求非空且两次输入一致。
 4. 通过 HTTPS 访问该网站。首页会显示 **AIDrama Setup** 安装向导；在宝塔文件管理器中打开 `/www/wwwroot/AIDrama/shared/setup-token.txt`，复制一次性口令到安装页面验证身份。
 5. 安装页检查 PHP 8.4、所需扩展、目录和站点根路径，填写数据库信息及管理员密码，点击一键安装。安装会使用 ZIP 中的完整代码，不会再从 GitHub 下载第二份安装包。
 
@@ -30,14 +30,16 @@ AIDrama/
 ├── bootstrap/installer.php # 安装逻辑，位于 Web 根目录之外
 ├── releases/
 │   └── vX.Y.Z/            # 完整 Laravel 代码及 vendor
-├── current -> releases/vX.Y.Z  # 内部版本指针，不是宝塔的网站根目录
+├── deploy/update.php       # 固定路径的 GitHub 更新器
+
 └── shared/
     ├── .env               # 私有 APP_KEY、数据库配置
+    ├── active-version     # 当前版本号（文本，不使用软链接）
     ├── storage/            # 私有登录哈希、素材、日志
     └── install.lock        # 安装完成标记
 ```
 
-`current` 仅用于升级与回滚，不再要求在宝塔网站路径中填写该目录。正式程序入口是一个轻量路由文件：未安装时加载网页安装向导；完成安装并加锁后只调用当前 Laravel 版本，安装入口不可再用。
+内部更新及回滚通过 `shared/active-version` 文本标记完成，**不调用 `symlink()`**，也不需要你在宝塔设置 `current` 目录。网页入口会加载当前 Laravel 版本；安装后安装向导立即加锁。
 
 不会创建 `public/storage` 软链接，也不会把用户素材、数据库备份、API Key、日志或 `.env` 放在公开目录。发布包也不含任何用户凭据。
 
@@ -51,15 +53,21 @@ location / {
 
 如宝塔已配置 Laravel 相同规则，不要重复添加。在网站根目录和 HTTPS 设置正确前，不要开放安装表单。
 
+## 遇到旧版本 symlink 安装失败如何恢复
+
+如果上一版安装过程中显示 `Call to undefined function symlink()`，**不要删除 `shared/`、数据库或已有资产**。下载新版完整 `AIDrama.zip`，先备份现有 AIDrama 目录，再通过宝塔解压覆盖程序文件，保留原有 `shared/`。新安装器会选用最新的 `releases/vX.Y.Z`，识别上次未完成的 `shared/.env`，先备份并保留原 APP_KEY，再继续配置。
+
+如果安装器检测到已有项目数据、管理员哈希或安装完成标记，会拒绝重复初始化，防止覆盖现有数据；这时不要清空数据库，需先检查具体残留状态。实际安装时必须让 PHP 用户可读写 `shared/`。
+
 ## 更新方式
 
 在 GitHub `main` 提交代码后，GitHub Actions 会生成新的 `AIDrama.zip` 完整 Release。**首次安装只需一次下载**；后续可在宝塔计划任务中，每小时以网站用户执行：
 
 ```bash
-su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php apply'
+su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
 ```
 
-更新器从 GitHub 最新 Release 下载完整包，只提取内部的新版本程序，不会覆盖 `public/index.php`、`shared/.env`、`shared/storage`、数据库或项目素材。更新使用 SHA256 校验、版本隔离及内部版本指针；升级涉及数据库迁移时自动停止，需要人工备份和审核。回滚仅恢复代码，不会自动回退数据库。
+更新器从 GitHub 最新 Release 下载完整包，只提取内部的新版本程序，不会覆盖 `public/index.php`、`shared/.env`、`shared/storage`、数据库或项目素材。更新使用 SHA256 校验、版本隔离及私有版本号标记，不需要软链接或 shell exec；升级涉及数据库迁移时自动停止，需要人工备份和审核。回滚仅恢复代码，不会自动回退数据库。
 
 ## 目前功能与限制
 
