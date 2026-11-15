@@ -1,28 +1,21 @@
 <?php
-/**
- * AIDrama public front controller. Never put private state inside public/.
- * The installation wizard lives at ../bootstrap/installer.php and becomes
- * inaccessible after shared/install.lock exists.
- */
+/** AIDrama public dispatcher. Private version marker lives outside public/. */
 declare(strict_types=1);
-
 $root=dirname(__DIR__);
-$installed=is_file($root.'/shared/install.lock');
-if (!$installed) {
+if(!is_file($root.'/shared/install.lock')) {
     require $root.'/bootstrap/installer.php';
     exit;
 }
-$release=realpath($root.'/current');
-$releaseParent=realpath($root.'/releases');
-if (!$release || !$releaseParent ||
-    !str_starts_with($release,$releaseParent.DIRECTORY_SEPARATOR) ||
-    !preg_match('~^v\d+\.\d+\.\d+$~D',basename($release)) ||
-    !is_file($release.'/vendor/autoload.php') ||
-    !is_file($release.'/public/index.php')
-) {
-    http_response_code(503);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo 'AIDrama is temporarily unavailable.';
-    exit;
+$marker=$root.'/shared/active-version';
+$tag=is_file($marker)?trim((string)file_get_contents($marker)):'';
+if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag)) {
+    http_response_code(503); echo 'AIDrama version configuration is unavailable.'; exit;
 }
-require $release.'/public/index.php';
+$releaseReal=realpath($root.'/releases/'.$tag);
+$releaseParent=realpath($root.'/releases');
+if(!$releaseReal || !$releaseParent || dirname($releaseReal)!==$releaseParent ||
+   !is_file($releaseReal.'/vendor/autoload.php') ||
+   !is_file($releaseReal.'/public/index.php')) {
+    http_response_code(503); echo 'AIDrama is temporarily unavailable.'; exit;
+}
+require $releaseReal.'/public/index.php';

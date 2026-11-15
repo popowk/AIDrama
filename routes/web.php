@@ -8,9 +8,14 @@ Route::get('/login',function() {
     return view('login',['configured'=>is_file(storage_path('app/private/admin.hash'))]);
 })->name('login');
 Route::post('/login',function(Request $request) {
-    $request->validate(['password'=>'required|string|max:200']);
+    $request->validate(['password'=>'required|string']);
     $hash=@file_get_contents(storage_path('app/private/admin.hash'));
-    if (!is_string($hash) || !password_verify($request->input('password'),trim($hash))) {
+    $stored=is_string($hash)?trim($hash):'';
+    $candidate=(string)$request->input('password');
+    $valid=str_starts_with($stored,'sha256$')
+        ? password_verify(hash('sha256',$candidate),substr($stored,7))
+        : ($stored!=='' && password_verify($candidate,$stored));
+    if (!$valid) {
         return back()->withErrors(['password'=>'密码错误，或尚未通过命令行设置管理员密码']);
     }
     $request->session()->regenerate();
