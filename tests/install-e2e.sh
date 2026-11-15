@@ -55,7 +55,7 @@ test -n "$TOKEN_LOGIN"
 curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/login.headers" \
   --data-urlencode "_token=$TOKEN_LOGIN" --data-urlencode 'password=7' \
   http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-response.html"
-if ! grep -qi 'location: http://127.0.0.1:18868/' "$RUNNER_TEMP/login.headers" &&
+if ! grep -qi 'location: http://127.0.0.1:18868' "$RUNNER_TEMP/login.headers" &&
    ! grep -qi 'location: /' "$RUNNER_TEMP/login.headers"; then
   echo 'Short admin password did not authenticate'
   tail -40 "$RUNNER_TEMP/setup-server.log"
