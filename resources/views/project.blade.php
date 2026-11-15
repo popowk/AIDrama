@@ -10,8 +10,13 @@
 <label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label></div>
 <label>完整剧本<textarea name="script" rows="11" maxlength="100000" required>{{ $project->script }}</textarea></label>
 <div class="button-row"><button class="button outline" type="submit">保存剧本</button></div></form>
-<form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('重新生成分镜会覆盖当前项目中已经保存的分镜编辑及资产清单，确定继续吗？')">@csrf
-<button class="button primary wide" type="submit" @disabled($project->status==='generating')>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button><p class="hint">模型可能需要较长响应时间；当前版本为同步处理，生成期间不要重复提交。</p></form>
+<form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
+<button class="button primary wide" type="submit" @disabled($project->status==='generating')>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
+<div id="generation-state" class="task-state" data-status="{{ $project->status }}">
+  @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
+  @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
+  @else<p class="hint">生成任务会保存在数据库。API 最长等待约 145 秒，遇到限流或暂时故障会自动重试一次。</p>@endif
+</div>
 </section>
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
 <div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
@@ -43,6 +48,41 @@
 @else<div class="empty">当前没有分镜。在上方保存剧本、配置 API 后，点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
 <script>
+const generationUrl=@json(route('generation.status',$project->id));
+const runUrl=@json(route('generation.run',$project->id));
+const initialGeneration=@json($project->status);
+let runningRequest=false,taskReloaded=false;
+const generationBox=document.getElementById('generation-state');
+function renderGeneration(info){
+ if(!generationBox)return;
+ if(info.status==='queued') generationBox.innerHTML='<strong>排队等待执行</strong><p class="muted">任务已持久保存，马上请求文本模型。</p>';
+ else if(info.status==='running') generationBox.innerHTML='<strong>文本模型处理中…</strong><p class="muted">已发送请求，请查看模型返回情况。接口较慢时允许多等一段时间；当前尝试次数：'+Number(info.attempts||1)+'。</p>';
+ else if(info.status==='failed') {
+   const strong=document.createElement('strong');strong.textContent='生成失败，可重试';
+   const p=document.createElement('p');p.className='muted';p.textContent=info.error||'请求失败，请检查模型连接。';
+   generationBox.replaceChildren(strong,p);
+ } else if(info.status==='done') generationBox.innerHTML='<strong>✓ 分镜已生成</strong><p class="muted">正在刷新最新结果…</p>';
+}
+function runGeneration(){
+ if(runningRequest)return;
+ runningRequest=true;
+ fetch(runUrl,{method:'POST',headers:{'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content,'Accept':'application/json'},credentials:'same-origin',keepalive:false})
+   .catch(()=>{}).finally(()=>{runningRequest=false});
+}
+async function refreshGeneration(){
+ try{
+   const res=await fetch(generationUrl,{credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'});
+   if(!res.ok)return;
+   const data=await res.json();
+   renderGeneration(data);
+   if(data.status==='queued')runGeneration();
+   if(data.status==='done'&&!taskReloaded){taskReloaded=true;window.location.reload();}
+ }catch(e){}
+}
+if(initialGeneration==='generating'){
+ refreshGeneration();
+ setInterval(refreshGeneration,3500);
+}
 async function loadPrompt(shot,project){
  const type=document.getElementById('type-'+shot).value;
  const area=document.getElementById('prompt-'+shot);

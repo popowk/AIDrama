@@ -33,6 +33,8 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::get('/projects/{id}',[StudioController::class,'show'])->whereNumber('id')->name('project.show');
     Route::post('/projects/{id}/save',[StudioController::class,'update'])->whereNumber('id')->name('project.update');
     Route::post('/projects/{id}/generate',[StudioController::class,'generate'])->whereNumber('id')->name('project.generate');
+    Route::get('/projects/{id}/generation/status',[StudioController::class,'generationStatus'])->whereNumber('id')->name('generation.status');
+    Route::post('/projects/{id}/generation/run',[StudioController::class,'runGeneration'])->middleware('throttle:10,1')->whereNumber('id')->name('generation.run');
     Route::post('/projects/{id}/shots/{shot}',[StudioController::class,'saveShot'])->whereNumber('id')->whereNumber('shot')->name('shot.save');
     Route::get('/projects/{id}/shots/{shot}/prompt',[StudioController::class,'prompt'])->whereNumber('id')->whereNumber('shot')->name('shot.prompt');
     Route::get('/projects/{id}/export',[StudioController::class,'export'])->whereNumber('id')->name('project.export');
