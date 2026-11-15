@@ -55,6 +55,16 @@ if(!$release) {
             @chmod($next,0600);
             if(!@rename($next,$marker))@unlink($next);
         }
+        // Also restore the public stylesheet when recovering a deleted
+        // version whose CSS may no longer match the replacement application.
+        $stylesheet=$release.'/public/app.css';
+        if(is_file($stylesheet)) {
+            $cssNext=$root.'/shared/.css-recovery-'.bin2hex(random_bytes(4));
+            if(@copy($stylesheet,$cssNext)) {
+                @chmod($cssNext,0644);
+                if(!@rename($cssNext,$root.'/public/app.css'))@unlink($cssNext);
+            }
+        }
     }
 }
 if(!$release) {
