@@ -29,19 +29,19 @@ AIDrama 是面向单用户的 PHP/Laravel 剧本、AI 分镜与资产规划平�
 
 ### 2. 初次安装
 
-在 GitHub Actions 构建并发布正式 v0.1.0 Release 后运行：
+在 GitHub Actions 成功发布正式 Release 后运行（始终下载最新版本）：
 
     curl -fL https://raw.githubusercontent.com/popowk/AIDrama/main/deploy/update.php -o /www/wwwroot/AIDrama/deploy/update.php
     chown -R www:www /www/wwwroot/AIDrama
     su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php check'
     su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
 
-首次 apply 会创建 shared/.env、shared/storage 和 releases/v0.1.0，然后因 APP_KEY 尚未设置而主动暂停切换。接下来：
+首次 apply 会创建 shared/.env、shared/storage 和 releases/vX.Y.Z（以实际最新版本号为准），然后因 APP_KEY 尚未设置而主动暂停切换。接下来：
 
 1. 宝塔新建数据库 aidrama 及独立 MySQL 用户，在 /www/wwwroot/AIDrama/shared/.env 设置 DB_ 开头的连接参数、APP_URL、APP_ENV=production、APP_DEBUG=false；启用 HTTPS 后设 SESSION_SECURE_COOKIE=true。
 2. 执行以下命令生成应用密钥，切勿在升级时重新生成：
 
-       cd /www/wwwroot/AIDrama/releases/v0.1.0
+       cd /www/wwwroot/AIDrama/releases/$(ls /www/wwwroot/AIDrama/releases | sort -V | tail -n 1)
        su -s /bin/sh www -c '/www/server/php/84/bin/php artisan key:generate --force'
 
 3. 再执行 apply，然后初始化数据库和管理员密码：
