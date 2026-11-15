@@ -2,6 +2,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration {
     public function up(): void {
@@ -21,6 +22,15 @@ return new class extends Migration {
             $t->string('image_status',16)->default('pending');
             $t->timestamp('image_started_at')->nullable();
             $t->text('image_error')->nullable();
+        });
+        // Existing project assets should not suddenly make logos and products AI-generatable.
+        DB::table('assets')->orderBy('id')->chunkById(100,function($assets) {
+            foreach($assets as $asset) {
+                if(\App\Services\AssetOrigin::needsUpload(
+                    $asset->type,$asset->name,(string)$asset->description)) {
+                    DB::table('assets')->where('id',$asset->id)->update(['source_kind'=>'upload']);
+                }
+            }
         });
     }
     public function down(): void {
