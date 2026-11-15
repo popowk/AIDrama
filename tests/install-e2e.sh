@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SMOKE="$RUNNER_TEMP/aidrama-install-e2e"
+SMOKE="$RUNNER_TEMP/drama.tmd.pet"
 cp -a "$BUNDLE" "$SMOKE"
 # Must start with a pristine site; the ZIP may never ship any private state.
 test ! -e "$SMOKE/shared"

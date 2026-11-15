@@ -3,7 +3,13 @@
 declare(strict_types=1);
 $root=dirname(__DIR__);
 if(!is_file($root.'/shared/install.lock')) {
-    require $root.'/bootstrap/installer.php';
+    $installer=$root.'/bootstrap/installer.php';
+    if(!is_file($installer)) {
+        http_response_code(503);
+        header('Content-Type: text/plain; charset=utf-8');
+        exit('AIDrama installer is missing. Check ZIP extraction and PHP open_basedir.');
+    }
+    require $installer;
     exit;
 }
 $marker=$root.'/shared/active-version';

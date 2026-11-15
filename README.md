@@ -1,15 +1,17 @@
 # AIDrama · AI 剧本与分镜工作台
 
+**安装位置**：程序自动从自身 PHP 文件所在位置解析根目录，不依赖域名、站点文件夹名称或固定的 `/www/wwwroot/...` 路径。
+
 **运行环境**：宝塔 OpenResty + PHP 8.4 + MySQL 5.7.44；Blade + 原生 JavaScript，无需服务器安装 Node.js、Composer、Redis 或 Python。
 
 ## 全新安装：只下载一个 ZIP
 
 前往 [最新 GitHub Release](https://github.com/popowk/AIDrama/releases/latest)，**只下载 `AIDrama.zip`**。程序、PHP 依赖与图形化安装器已经整合在一起，不再有单独的 Installer.zip。
 
-1. 在宝塔新建站点，PHP 版本设为 8.4，网站目录填写 **`/www/wwwroot/AIDrama/public`**（网站运行根目录为 `public`，不使用 `current/public`），启用 HTTPS。**须使用全新空目录**，不要在现有 AIDrama 程序上解压。
-2. 将 `AIDrama.zip` 上传到 `/www/wwwroot/AIDrama/` 并在该目录解压，随后可删除已上传的 ZIP 文件。解压后应存在 `/www/wwwroot/AIDrama/public/index.php` 和 `/www/wwwroot/AIDrama/releases/vX.Y.Z/`。
+1. 在宝塔新建站点，PHP 版本设为 8.4，**网站目录使用你在宝塔中为站点创建的实际路径**，例如 `/www/wwwroot/你的站点目录`，运行目录设为 `/public`，即网站实际根目录为 `你的站点目录/public`。启用 HTTPS。**须使用全新空目录**，不要在现有程序上解压。程序不会要求目录名叫 `AIDrama`。
+2. 将 `AIDrama.zip` 上传到**当前宝塔站点实际目录**并在该目录解压（不要再套一层 `AIDrama/`），随后可删除已上传的 ZIP 文件。解压后应存在 `当前站点目录/public/index.php` 和 `当前站点目录/releases/vX.Y.Z/`。
 3. 在宝塔创建一个**全新的空 MySQL 数据库**及专用账号，记下其账号和密码。即使旧文件已经删除，**旧数据库的表仍可能存在**；不要复用旧库。管理员密码不限制长度和复杂度，只要求非空且两次输入一致。
-4. 通过 HTTPS 访问该网站。首页会显示 **AIDrama Setup** 安装向导；在宝塔文件管理器中打开 `/www/wwwroot/AIDrama/shared/setup-token.txt`，复制一次性口令到安装页面验证身份。
+4. 通过 HTTPS 访问该网站。首页会显示 **AIDrama Setup** 安装向导；在宝塔文件管理器中打开 `当前站点目录/shared/setup-token.txt`，复制一次性口令到安装页面验证身份。
 5. 安装页检查 PHP 8.4、所需扩展、目录和站点根路径，填写数据库信息及管理员密码，点击一键安装。安装会使用 ZIP 中的完整代码，不会再从 GitHub 下载第二份安装包。
 
 **注意**：首次安装需启用 PHP 扩展 `fileinfo`、`curl`、`zip`、`mbstring`、`openssl`、`pdo_mysql` 等。PHP-FPM 进程应能写入 AIDrama 根目录及 `shared/` 和 `releases/`；宝塔 PHP 防跨站配置要允许站点 PHP 访问整个 AIDrama 目录。数据库建议限制为仅本机可访问。只对全新、空的 AIDrama 目录解压安装包，**不要把安装包覆盖已有站点**。
@@ -19,7 +21,7 @@
 对外的网站运行根目录始终是：
 
 ```text
-/www/wwwroot/AIDrama/public
+<实际网站目录>/public
 ```
 
 程序目录（从浏览器不能直接访问）：
@@ -64,7 +66,7 @@ location / {
 在 GitHub `main` 提交代码后，GitHub Actions 会生成新的 `AIDrama.zip` 完整 Release。**首次安装只需一次下载**；后续可在宝塔计划任务中，每小时以网站用户执行：
 
 ```bash
-su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
+su -s /bin/sh www -c '/www/server/php/84/bin/php /实际网站目录/deploy/update.php apply'
 ```
 
 更新器从 GitHub 最新 Release 下载完整包，只提取内部的新版本程序，不会覆盖 `public/index.php`、`shared/.env`、`shared/storage`、数据库或项目素材。更新使用 SHA256 校验、版本隔离及私有版本号标记，不需要软链接或 shell exec；升级涉及数据库迁移时自动停止，需要人工备份和审核。回滚仅恢复代码，不会自动回退数据库。

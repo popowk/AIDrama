@@ -19,12 +19,16 @@ $root=dirname(__DIR__);
 $errors = [];
 $success = false;
 if (!is_file($root.'/public/index.php') || is_link($root.'/public')) {
-    http_response_code(404); exit('Not found');
+    // Make an incomplete installation distinguishable from an OpenResty 404.
+    // Never reveal private absolute paths in a public error response.
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('AIDrama installation files are inaccessible. Check ZIP extraction and PHP open_basedir.');
 }
 function esc(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function fail(string $message): never { throw new RuntimeException($message); }
 function makeDir(string $path): void {
-    if (!is_dir($path) && !@mkdir($path, 0750, true) && !is_dir($path)) fail('无法创建目录：'.basename($path).'。请在宝塔将 AIDrama 目录所有者设为 www。');
+    if (!is_dir($path) && !@mkdir($path, 0750, true) && !is_dir($path)) fail('无法创建目录：'.basename($path).'。请在宝塔将当前网站目录的写入权限授予 PHP 运行用户。');
 }
 function checks(string $root): array {
     $list=[
@@ -38,7 +42,7 @@ function checks(string $root): array {
         ['DOM / XML',extension_loaded('dom')&&extension_loaded('xml')],
         ['Ctype / Tokenizer',extension_loaded('ctype')&&extension_loaded('tokenizer')],
         ['Session',extension_loaded('session')],
-        ['网站根目录指向 AIDrama/public',realpath((string)($_SERVER['DOCUMENT_ROOT']??''))===realpath($root.'/public')],
+        ['网站根目录指向当前程序所在目录/public',realpath((string)($_SERVER['DOCUMENT_ROOT']??''))===realpath($root.'/public')],
         ['站点文件目录可写',is_writable($root)],
         ['public 目录可写',is_writable($root.'/public')],
     ];
