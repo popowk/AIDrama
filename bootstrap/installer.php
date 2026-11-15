@@ -100,6 +100,7 @@ function checks(string $root): array {
         ['DOM / XML',extension_loaded('dom')&&extension_loaded('xml')],
         ['Ctype / Tokenizer',extension_loaded('ctype')&&extension_loaded('tokenizer')],
         ['Session',extension_loaded('session')],
+        ['网站根目录指向 current/public',realpath((string)($_SERVER['DOCUMENT_ROOT']??''))===realpath($root.'/current/public')],
         ['站点文件目录可写',is_writable($root)],
         ['current 目录可写',is_writable($root.'/current')],
     ];
@@ -229,6 +230,11 @@ try {
     if(empty($_SESSION['aidrama_csrf'])) $_SESSION['aidrama_csrf']=bin2hex(random_bytes(24));
     $post=$_SERVER['REQUEST_METHOD']==='POST';
     if($post){
+        $tls=(!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') ||
+             strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO']??''))==='https';
+        $loopback=in_array((string)($_SERVER['REMOTE_ADDR']??''),['127.0.0.1','::1'],true);
+        if(!$tls && !$loopback)fail('请先在宝塔启用 HTTPS，并使用 https:// 地址打开安装页面');
+
         if(!hash_equals((string)$_SESSION['aidrama_csrf'],(string)($_POST['csrf']??'')))fail('页面已过期，请刷新后重新提交');
         $action=(string)($_POST['action']??'');
         if($action==='unlock'){
@@ -275,7 +281,7 @@ label{display:block;font-weight:600;font-size:13px;margin-bottom:14px}input{widt
 <?php foreach($errors as $error): ?><div class="notice"><?=esc($error)?></div><?php endforeach; ?>
 <?php if(!$unlocked): ?>
 <div class="panel"><h2>01 · 验证安装身份</h2><p class="muted">首次访问时已自动生成一次性口令。为防止别人抢先安装，请在宝塔文件管理器打开下方文件，将内容粘贴在这里。此文件不在网站公开目录中。</p>
-<div class="help"><code><?=esc($root.'/shared/setup-token.txt')?></code></div><br>
+<div class="help"><code>AIDrama/shared/setup-token.txt</code></div><br>
 <form method="post" autocomplete="off"><input type="hidden" name="csrf" value="<?=esc((string)$_SESSION['aidrama_csrf'])?>"><input type="hidden" name="action" value="unlock">
 <label>一次性安装口令<input name="setup_token" type="password" required autocomplete="off" placeholder="粘贴口令"></label>
 <button type="submit" class="button">验证并继续 →</button></form></div>
