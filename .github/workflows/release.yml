@@ -86,7 +86,7 @@ jobs:
           printf '%s\n' "$VERSION" > "$BUNDLE/releases/$VERSION/VERSION"
           cp public/index.php public/app.css "$BUNDLE/public/"
           cp bootstrap/installer.php "$BUNDLE/bootstrap/installer.php"
-          cp deploy/update.php "$BUNDLE/deploy/update.php"
+          cp deploy/update.php deploy/diagnose.php "$BUNDLE/deploy/"
           test ! -e "$BUNDLE/public/storage"
           (cd "$BUNDLE" && zip -qr "$GITHUB_WORKSPACE/AIDrama.zip" .)
           sha256sum AIDrama.zip > AIDrama.zip.sha256
@@ -97,6 +97,7 @@ jobs:
           test -f "$CHECK_DIR/public/index.php"
           test -f "$CHECK_DIR/bootstrap/installer.php"
           test -f "$CHECK_DIR/deploy/update.php"
+          test -f "$CHECK_DIR/deploy/diagnose.php"
           test -f "$CHECK_DIR/releases/$VERSION/vendor/autoload.php"
           test -f "$CHECK_DIR/releases/$VERSION/public/index.php"
           test -f "$CHECK_DIR/releases/$VERSION/deploy/dispatcher.php"
@@ -107,4 +108,7 @@ jobs:
           php -l "$CHECK_DIR/releases/$VERSION/public/index.php"
           # Exercise the exact files that the user downloads, not the staging folder.
           BUNDLE="$CHECK_DIR" bash tests/install-e2e.sh
+          php "$RUNNER_TEMP/drama.tmd.pet/deploy/diagnose.php" > "$RUNNER_TEMP/aidrama-diagnose.txt"
+          grep -q 'Laravel bootstrap.*OK' "$RUNNER_TEMP/aidrama-diagnose.txt"
+          grep -q 'MySQL connection.*OK' "$RUNNER_TEMP/aidrama-diagnose.txt"
           gh release create "$VERSION" AIDrama.zip AIDrama.zip.sha256 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "AIDrama $VERSION" --generate-notes --latest
