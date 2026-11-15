@@ -152,8 +152,9 @@ class StudioController
                     $key=$asset['type'].'|'.$asset['name'];
                     $included[$key]=true;
                     $old=$previous->get($key);
-                    if($old&&$old->file_path) {
-                        // Re-generation must not discard customer's uploaded assets.
+                    if($old&&$old->file_path &&
+                        ($old->source_kind==='upload' || ($asset['source_kind']??'generate')==='generate')) {
+                        // Never reuse an AI-generated image as a "customer original".
                         $asset['file_path']=$old->file_path;
                         $asset['source_kind']=$old->source_kind==='upload'?'upload':($asset['source_kind']??'generate');
                         $asset['image_status']=$old->image_status;
