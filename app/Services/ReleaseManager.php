@@ -53,15 +53,28 @@ class ReleaseManager
         return $release;
     }
 
+    private function pendingMigrations(): int
+    {
+        // The migration list is resolved from the active code, not a static table list.
+        $migrator=app('migrator');
+        $files=$migrator->getMigrationFiles([database_path('migrations')]);
+        $ran=\Illuminate\Support\Facades\DB::table('migrations')->pluck('migration')->all();
+        return count(array_diff(array_keys($files),$ran));
+    }
+
     public function check(): array
     {
         $current=$this->current();
         $latest=$this->release();
         $tag=(string)$latest['tag_name'];
+        $newer=version_compare(substr($tag,1),substr($current,1),'>');
+        $pending=$this->pendingMigrations();
         return [
             'current'=>$current,
             'latest'=>$tag,
-            'available'=>version_compare(substr($tag,1),substr($current,1),'>'),
+            'available'=>$newer||$pending>0,
+            'migration_only'=>!$newer&&$pending>0,
+            'pending_migrations'=>$pending,
             'release_url'=>'https://github.com/'.self::REPO.'/releases/tag/'.$tag,
         ];
     }
@@ -84,6 +97,12 @@ class ReleaseManager
         $root=$this->root();
         $file=$root.'/shared/update-state.json';
         $data=is_file($file)?json_decode((string)file_get_contents($file),true):null;
+        if(is_array($data) && in_array($data['status']??'',['checking','downloading','verifying','extracting','migrating','activating'],true)) {
+            $updated=strtotime((string)($data['updated_at']??''))?:0;
+            if($updated && $updated<time()-600) {
+                return ['status'=>'failed','message'=>'上次更新任务已超时，服务器可能终止了请求。请检查当前版本后重试。'];
+            }
+        }
         return is_array($data)?$data:['status'=>'idle','message'=>'尚未执行更新'];
     }
 
@@ -148,15 +167,17 @@ class ReleaseManager
             $current=$this->current();
             $release=$this->release();
             $tag=(string)$release['tag_name'];
-            if(version_compare(substr($tag,1),substr($current,1),'<='))
-                return $this->finish($root,'done','已经是最新正式版本',$current);
+            $newer=version_compare(substr($tag,1),substr($current,1),'>');
+            if(!$newer && $this->pendingMigrations()===0)
+                return $this->finish($root,'done','已经是最新正式版本，数据库结构也已更新',$current);
+            if(!$newer)$tag=$current;
             $assets=[];
             foreach(($release['assets']??[]) as $asset)
                 $assets[$asset['name']??'']=$asset['browser_download_url']??'';
-            if(empty($assets[self::ZIP])||empty($assets[self::CHECKSUM]))
+            if($newer && (empty($assets[self::ZIP])||empty($assets[self::CHECKSUM])))
                 throw new RuntimeException('最新 Release 缺少 ZIP 或 SHA256 校验文件');
             $dir=$root.'/releases/'.$tag;
-            if(!is_dir($dir)) {
+            if($newer && !is_dir($dir)) {
                 $temp=$root.'/shared/tmp/update-'.bin2hex(random_bytes(8));
                 if(!is_dir($temp)&&!mkdir($temp,0750,true)&&!is_dir($temp))
                     throw new RuntimeException('无法创建私有下载目录');
@@ -199,6 +220,8 @@ class ReleaseManager
             ]);
             if($result!==0)throw new RuntimeException('数据库迁移失败，未切换当前程序版本');
 
+            if(!$newer)
+                return $this->finish($root,'done','当前版本缺失的数据表已补齐，项目数据已保留',$current);
             $this->setState($root,'activating','正在切换正式版本',$tag);
             $marker=$root.'/shared/active-version';
             $next=$root.'/shared/active-version.new-'.bin2hex(random_bytes(4));
