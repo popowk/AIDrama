@@ -99,31 +99,44 @@ class StudioController
         return response()->json(['target'=>$target,'prompt'=>$builder->build($project,$item,$target)]);
     }
     public function settings() {
-        $rows=DB::table('settings')->whereIn('key',['ai.api_base','ai.model','ai.api_key'])->pluck('value','key');
+        $rows=DB::table('settings')->where('key','like','ai.%')->pluck('value','key');
         return view('settings',[
-            'apiBase'=>$rows['ai.api_base']??'https://api.openai.com/v1',
-            'model'=>$rows['ai.model']??'',
-            'hasKey'=>!empty($rows['ai.api_key']),
+            'textApiBase'=>$rows['ai.text.api_base']??$rows['ai.api_base']??'https://api.openai.com/v1',
+            'textModel'=>$rows['ai.text.model']??$rows['ai.model']??'',
+            'textHasKey'=>!empty($rows['ai.text.api_key']??$rows['ai.api_key']??null),
+            'imageApiBase'=>$rows['ai.image.api_base']??'https://api.openai.com/v1',
+            'imageModel'=>$rows['ai.image.model']??'',
+            'imageHasKey'=>!empty($rows['ai.image.api_key']??null),
         ]);
     }
     public function saveSettings(Request $request) {
         $v=$request->validate([
+            'kind'=>['required',Rule::in(['text','image'])],
             'api_base'=>'required|url|starts_with:https://|max:250',
             'model'=>'required|string|max:191',
             'api_key'=>'nullable|string|max:2000',
         ]);
-        $host=parse_url($v['api_base'],PHP_URL_HOST);
-        if (!$host || strtolower($host)==='localhost' || filter_var($host,FILTER_VALIDATE_IP))
-            return back()->withErrors(['api_base'=>'请使用公网 HTTPS 域名，不允许 IP 或 localhost']);
-        foreach(['ai.api_base'=>$v['api_base'],'ai.model'=>$v['model']] as $k=>$value) {
-            DB::table('settings')->updateOrInsert(['key'=>$k],['value'=>$value,'updated_at'=>now()]);
-        }
-        if (filled($v['api_key']??null)) {
-            DB::table('settings')->updateOrInsert(['key'=>'ai.api_key'],[
-                'value'=>Crypt::encryptString($v['api_key']),'updated_at'=>now(),
-            ]);
-        }
-        return back()->with('ok','模型配置已保存，API Key 只在服务器加密存储');
+        $parts=parse_url($v['api_base']);
+        $host=strtolower((string)($parts['host']??''));
+        if(!$parts||($parts['scheme']??'')!=='https'||!$host||
+           isset($parts['user'])||isset($parts['pass'])||
+           isset($parts['query'])||isset($parts['fragment'])||
+           $host==='localhost'||str_ends_with($host,'.local')||
+           filter_var($host,FILTER_VALIDATE_IP))
+            return back()->withErrors(['api_base'=>'请填写可信的公网 HTTPS API 地址，不能使用 IP、localhost、账号或 URL 参数']);
+        $type=$v['kind'];
+        $prefix='ai.'.$type.'.';
+        DB::transaction(function() use ($v,$prefix) {
+            foreach(['api_base'=>$v['api_base'],'model'=>$v['model']] as $k=>$value)
+                DB::table('settings')->updateOrInsert(['key'=>$prefix.$k],[
+                    'value'=>$value,'updated_at'=>now(),
+                ]);
+            if (filled($v['api_key']??null))
+                DB::table('settings')->updateOrInsert(['key'=>$prefix.'api_key'],[
+                    'value'=>Crypt::encryptString($v['api_key']),'updated_at'=>now(),
+                ]);
+        });
+        return back()->with('ok',($type==='text'?'文本':'图片').'模型配置已保存。API Key 仅存储加密值，未输入新密钥则保留旧值。');
     }
     public function export(int $id) {
         $project=$this->project($id);
