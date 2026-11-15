@@ -22,14 +22,54 @@ class ReleaseManager
         return $root;
     }
 
+    private function validVersion(string $root,string $tag): bool
+    {
+        if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag))return false;
+        $parent=realpath($root.'/releases');
+        $path=$root.'/releases/'.$tag;
+        if(!$parent||is_link($path))return false;
+        $dir=realpath($path);
+        if(!$dir||dirname($dir)!==$parent||basename($dir)!==$tag)return false;
+        foreach(['VERSION','vendor/autoload.php','bootstrap/app.php','public/index.php'] as $required)
+            if(!is_file($dir.'/'.$required))return false;
+        return trim((string)@file_get_contents($dir.'/VERSION'))===$tag;
+    }
+
     public function current(): string
     {
         $root=$this->root();
         $file=$root.'/shared/active-version';
-        $tag=is_file($file)?trim((string)file_get_contents($file)):'';
-        if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag))
-            throw new RuntimeException('当前版本标记缺失，无法安全更新');
-        return $tag;
+        $tag=is_file($file)?trim((string)@file_get_contents($file)):'';
+        if($this->validVersion($root,$tag))return $tag;
+        // The public dispatcher may have recovered after the old release was
+        // deleted but cannot write its repaired marker. Identify what PHP is
+        // actually serving instead of returning a stale version.
+        $active=basename(base_path());
+        if($this->validVersion($root,$active))return $active;
+        throw new RuntimeException('没有可用的完整程序版本，请重新解压正式安装包');
+    }
+
+    private function pruneReleases(string $root,string $active,string $previous): void
+    {
+        $parent=realpath($root.'/releases');
+        if(!$parent)return;
+        foreach(glob($root.'/releases/v*',GLOB_ONLYDIR)?:[] as $entry) {
+            $tag=basename($entry);
+            if($tag===$active||$tag===$previous||!$this->validVersion($root,$tag))
+                continue;
+            // Scope deletion to a verified old release directory. Never touch
+            // shared/, public/, staged downloads, symlinks, or arbitrary paths.
+            $iter=new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($entry,\FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach($iter as $child) {
+                $path=$child->getPathname();
+                if($child->isDir()&&!$child->isLink())@rmdir($path);
+                else @unlink($path);
+            }
+            @rmdir($entry);
+        }
     }
 
     private function release(): array
@@ -233,7 +273,13 @@ class ReleaseManager
             $css=$root.'/public/app-css-'.bin2hex(random_bytes(4));
             if(copy($dir.'/public/app.css',$css))
                 if(!rename($css,$root.'/public/app.css'))@unlink($css);
-            return $this->finish($root,'done','已更新到 '.$tag.'，数据库与素材均已保留',$tag);
+            // Keep only the active release and one rollback candidate.
+            // Cleanup is best effort and never blocks a successfully activated version.
+            try {$this->pruneReleases($root,$tag,$current);}
+            catch(\Throwable $cleanupError) {
+                \Illuminate\Support\Facades\Log::warning('Old release cleanup skipped',['error'=>get_class($cleanupError)]);
+            }
+            return $this->finish($root,'done','已更新到 '.$tag.'，保留上一版本用于回滚；更旧的发布目录已尝试清理',$tag);
         } catch(\Throwable $e) {
             $message=$e instanceof RuntimeException?$e->getMessage():'更新中出现服务器错误，请检查 Laravel 日志';
             $this->setState($root,'failed',$message,$tag);
