@@ -3,6 +3,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\StudioController;
 use App\Http\Controllers\UpdateController;
+use App\Http\Controllers\AssetController;
 use App\Http\Middleware\RequireAdmin;
 
 Route::get('/login',function() {
@@ -45,4 +46,15 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/updates/apply',[UpdateController::class,'apply'])->middleware('throttle:3,1')->name('updates.apply');
     Route::get('/settings',[StudioController::class,'settings'])->name('settings');
     Route::post('/settings',[StudioController::class,'saveSettings'])->name('settings.save');
+    Route::post('/settings/prompts',[StudioController::class,'savePromptSettings'])->name('settings.prompts.save');
+    Route::post('/settings/prompts/{kind}/reset',[StudioController::class,'resetPromptSettings'])
+        ->where('kind','script|image|kling|seedance')->name('settings.prompts.reset');
+    Route::post('/projects/{id}/assets/{asset}/upload',[AssetController::class,'upload'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.upload');
+    Route::post('/projects/{id}/assets/{asset}/generate',[AssetController::class,'generate'])
+        ->middleware('throttle:20,1')->whereNumber('id')->whereNumber('asset')->name('asset.generate');
+    Route::get('/projects/{id}/assets/{asset}/status',[AssetController::class,'status'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.status');
+    Route::get('/projects/{id}/assets/{asset}/file',[AssetController::class,'file'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.file');
 });
