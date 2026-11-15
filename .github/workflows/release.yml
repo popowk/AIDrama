@@ -84,4 +84,17 @@ jobs:
           test ! -e "$BUNDLE/public/storage"
           (cd "$BUNDLE" && zip -qr "$GITHUB_WORKSPACE/AIDrama.zip" .)
           sha256sum AIDrama.zip > AIDrama.zip.sha256
+          # Validate actual downloadable ZIP, not just repository sources.
+          CHECK_DIR="$RUNNER_TEMP/zip-verify"
+          mkdir -p "$CHECK_DIR"
+          unzip -q AIDrama.zip -d "$CHECK_DIR"
+          test -f "$CHECK_DIR/public/index.php"
+          test -f "$CHECK_DIR/bootstrap/installer.php"
+          test -f "$CHECK_DIR/releases/$VERSION/vendor/autoload.php"
+          test -f "$CHECK_DIR/releases/$VERSION/public/index.php"
+          test ! -e "$CHECK_DIR/public/storage"
+          test ! -f "$CHECK_DIR/public/.env"
+          php -l "$CHECK_DIR/public/index.php"
+          php -l "$CHECK_DIR/bootstrap/installer.php"
+          php -l "$CHECK_DIR/releases/$VERSION/public/index.php"
           gh release create "$VERSION" AIDrama.zip AIDrama.zip.sha256 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "AIDrama $VERSION" --generate-notes --latest
