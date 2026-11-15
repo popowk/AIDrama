@@ -37,7 +37,10 @@ function archiveCheck(string $file):void{
  for($i=0;$i<$z->numFiles;$i++){
   $it=$z->statIndex($i);$p=(string)($it['name']??'');
   if(!$p||str_starts_with($p,'/')||str_contains($p,"\\")||preg_match('~(^|/)\.\.?(/|$)~',$p)||str_contains($p,"\0"))stop("危险路径: {$p}");
-  if($p==='.env'||str_starts_with($p,'storage/')||str_starts_with($p,'public/storage/'))stop('包中发现用户私有数据');
+  if($p==='.env'||str_starts_with($p,'storage/')||str_starts_with($p,'shared/')||
+    str_starts_with($p,'public/storage/')||str_starts_with($p,'public/.')||
+    preg_match('~^public/.*\.(?:ini|log|sql|sqlite|db|bak|zip|env)$~i',$p))
+    stop('发布包包含不允许公开的内容');
   $size+=(int)($it['size']??0);if($size>2147483648)stop('解压内容超过安全限制');
   if($z->getExternalAttributesIndex($i,$os,$mode)&&$os===ZipArchive::OPSYS_UNIX&&(($mode>>16)&0170000)===0120000)stop('ZIP 禁止软链接');
  }
@@ -47,18 +50,22 @@ function fingerprints(string $d):array{
  $a=[];foreach(glob($d.'/database/migrations/*.php')?:[] as $p)$a[basename($p)]=hash_file('sha256',$p);
  ksort($a);return $a;
 }
+function activeTag(string $root):string{
+ $p=$root.'/shared/active-version';
+ $value=is_file($p)?trim((string)file_get_contents($p)):'';
+ if(!preg_match('~^v\d+\.\d+\.\d+$~D',$value))stop('当前活动版本标记缺失或无效');
+ return $value;
+}
 function switchVersion(string $root,string $tag):void{
- if(!is_dir($root.'/releases/'.$tag))stop('目标版本缺失');
- $next=$root.'/current.next';
- if(is_link($next))unlink($next);
- if(file_exists($next))stop('临时切换路径被占用');
- if(!symlink($root.'/releases/'.$tag,$next))stop('创建版本软链接失败');
- if(is_dir($root.'/current')&&!is_link($root.'/current')){unlink($next);stop('current 不能是实体目录');}
- if(!rename($next,$root.'/current'))stop('版本切换失败');
+ if(!preg_match('~^v\d+\.\d+\.\d+$~D',$tag)||!is_dir($root.'/releases/'.$tag))stop('目标版本无效');
+ $p=$root.'/shared/active-version.staging-'.bin2hex(random_bytes(4));
+ if(file_put_contents($p,$tag."\n",LOCK_EX)===false)stop('写入私有版本指针失败');
+ chmod($p,0600);
+ if(!rename($p,$root.'/shared/active-version'))stop('版本切换失败');
 }
 try{
  $mode=$argv[1]??'check';if(!in_array($mode,['check','apply','rollback'],true))stop('用法: php update.php check|apply|rollback');
- if(!extension_loaded('curl')||!class_exists('ZipArchive')||!function_exists('exec'))stop('缺少 curl、zip 或 exec');
+ if(!extension_loaded('curl')||!class_exists('ZipArchive'))stop('缺少 curl 或 zip');
  $parent=realpath(__DIR__.'/..')?:dirname(__DIR__);
  $root=preg_match('~^(.*)/releases/v\d+\.\d+\.\d+$~',$parent,$m)?$m[1]:$parent;
  if(!str_starts_with($root,'/')||$root==='/')stop('部署目录异常');
@@ -77,7 +84,7 @@ try{
  }
  $json=api('https://api.github.com/repos/'.REPO.'/releases/latest');
  $tag=(string)($json['tag_name']??'');if(!preg_match('~^v\d+\.\d+\.\d+$~',$tag))stop('版本标签必须为 vX.Y.Z');
- $now=is_file($root.'/current/VERSION')?trim((string)file_get_contents($root.'/current/VERSION')):'';
+ $now=activeTag($root);
  msg('当前：'.($now?:'未安装').'，最新：'.$tag);
  if($now===$tag){msg('无需更新');exit;}
  if($now&&version_compare(substr($tag,1),substr($now,1),'<='))
@@ -103,21 +110,22 @@ try{
    stop('缺少一体化安装结构');
   foreach(['app/public','app/private','framework/cache/data','framework/sessions','framework/views','logs'] as $sub)
    mkdirSafe($root.'/shared/storage/'.$sub);
-  if(!symlink($root.'/shared/.env',$stageRelease.'/.env')||
-     !symlink($root.'/shared/storage',$stageRelease.'/storage'))
-    stop('共享目录软链接失败');
-  // Never create a public/storage symlink: user assets are private.
+  // Private configuration and storage are resolved by the staged bootstrap.
   mkdirSafe($stageRelease.'/bootstrap/cache');
   if(!rename($stageRelease,$dir))stop('版本保存失败');
   msg('新版本预备目录: '.$dir);
  }
  $env=(string)file_get_contents($root.'/shared/.env');
- if(!preg_match('/^APP_KEY=base64:[A-Za-z0-9+\/=]+$/m',$env))
-  stop('APP_KEY 尚未初始化，当前代码不切换。请先在预备版本目录执行 php artisan key:generate --force');
- $php=is_executable('/www/server/php/84/bin/php')?'/www/server/php/84/bin/php':PHP_BINARY;
- exec(escapeshellarg($php).' '.escapeshellarg($dir.'/artisan').' --version 2>&1',$lines,$status);
- if($status!==0)stop('Laravel 自检失败：'.implode(' ',array_slice($lines,-4)));
- if($now&&fingerprints($root.'/current')!==fingerprints($dir)){
+ if(!preg_match('/^APP_KEY=base64:[A-Za-z0-9+\/=]+$/m',$env))stop('APP_KEY 无效，拒绝升级');
+ // Bootstrap in-process rather than invoking disabled shell functions.
+ try {
+    require_once $dir.'/vendor/autoload.php';
+    $app=require $dir.'/bootstrap/app.php';
+    $kernel=$app->make(\Illuminate\Contracts\Console\Kernel::class);
+    $kernel->bootstrap();
+    if(!is_string($app->version()))stop('Laravel 自检失败');
+ } catch(\Throwable $e) {stop('Laravel 启动自检失败：'.get_class($e));}
+ if($now&&fingerprints($root.'/releases/'.$now)!==fingerprints($dir)){
   if(!in_array('--allow-migrations',$argv,true))
    stop('数据库迁移文件已变化，自动更新暂停；备份数据库并审核迁移后，手动 apply --allow-migrations');
   msg('管理员允许迁移版本切换。本脚本不会自动执行数据库迁移。');
@@ -130,5 +138,15 @@ try{
  $cssNext=$root.'/public/app-css-'.bin2hex(random_bytes(4));
  if(!copy($css,$cssNext)||!rename($cssNext,$root.'/public/app.css'))
    msg('代码更新成功，但 CSS 同步失败，请检查 public 目录权限');
+ // Refresh the stable CLI updater from the new release after a successful switch.
+ $updater=$dir.'/deploy/update.php';
+ if(is_file($updater) && is_dir($root.'/deploy')) {
+    $nextUpdater=$root.'/deploy/update.staged-'.bin2hex(random_bytes(4)).'.php';
+    if(copy($updater,$nextUpdater)) {
+       chmod($nextUpdater,0640);
+       if(!rename($nextUpdater,$root.'/deploy/update.php'))@unlink($nextUpdater);
+    }
+ }
+ @unlink($zipFile);@unlink($shaFile);
  msg('代码更新成功：'.$tag.'，宝塔站点根目录 '.$root.'/public');
 }catch(Throwable $e){fwrite(STDERR,'[ERROR] '.$e->getMessage()."\n");exit(1);}
