@@ -4,6 +4,12 @@ require dirname(__DIR__).'/vendor/autoload.php';
 $app=require dirname(__DIR__).'/bootstrap/app.php';
 $kernel=$app->make(\Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
+$code=\Illuminate\Support\Facades\Artisan::call('migrate',[
+    '--path'=>database_path('migrations'),
+    '--realpath'=>true,'--force'=>true,'--no-interaction'=>true,
+]);
+if($code!==0)throw new RuntimeException('In-process Laravel migrations cannot run with --realpath');
+
 
 use App\Http\Controllers\StudioController;
 use App\Services\StoryboardEngine;
