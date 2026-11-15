@@ -105,7 +105,7 @@ PROJECT_URL="$(sed -n 's/^[Ll]ocation: \(.*\/projects\/[0-9]*\).*/\1/p' "$RUNNER
 test -n "$PROJECT_URL"
 curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-details.html"
 grep -q '创作形式' "$RUNNER_TEMP/project-details.html"
-grep -q '画面文字' "$RUNNER_TEMP/project-details.html"
+grep -q '文案＋口播' "$RUNNER_TEMP/project-details.html"
 grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
 
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
