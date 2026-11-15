@@ -74,6 +74,15 @@ try {
     $kernel=$app->make(\Illuminate\Contracts\Console\Kernel::class);
     $kernel->bootstrap();
     $line('Laravel bootstrap','OK');
+    $viewBound=$app->bound('view');
+    $line('Laravel view service',$viewBound?'OK':'MISSING');
+    $cacheFile=$release.'/bootstrap/cache/config.php';
+    $line('Configuration cached',is_file($cacheFile));
+    if(is_file($cacheFile)) {
+        $providers=\Illuminate\Support\Facades\Config::get('app.providers',[]);
+        $line('Core View provider',is_array($providers)&&
+            in_array(\Illuminate\View\ViewServiceProvider::class,$providers,true)?'OK':'MISSING');
+    }
     \Illuminate\Support\Facades\DB::connection()->select('SELECT 1');
     $line('MySQL connection','OK');
     $schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
