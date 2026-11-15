@@ -2,6 +2,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\StudioController;
+use App\Http\Controllers\UpdateController;
 use App\Http\Middleware\RequireAdmin;
 
 Route::get('/login',function() {
@@ -38,6 +39,10 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/projects/{id}/shots/{shot}',[StudioController::class,'saveShot'])->whereNumber('id')->whereNumber('shot')->name('shot.save');
     Route::get('/projects/{id}/shots/{shot}/prompt',[StudioController::class,'prompt'])->whereNumber('id')->whereNumber('shot')->name('shot.prompt');
     Route::get('/projects/{id}/export',[StudioController::class,'export'])->whereNumber('id')->name('project.export');
+    Route::get('/updates',[UpdateController::class,'index'])->name('updates.index');
+    Route::get('/updates/check',[UpdateController::class,'check'])->middleware('throttle:12,1')->name('updates.check');
+    Route::get('/updates/status',[UpdateController::class,'status'])->name('updates.status');
+    Route::post('/updates/apply',[UpdateController::class,'apply'])->middleware('throttle:3,1')->name('updates.apply');
     Route::get('/settings',[StudioController::class,'settings'])->name('settings');
     Route::post('/settings',[StudioController::class,'saveSettings'])->name('settings.save');
 });

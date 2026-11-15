@@ -8,7 +8,7 @@
 </head>
 <body>
 <header class="header"><a href="{{ route('home') }}" class="brand"><span class="brand-icon">▣</span><span>AIDrama<small>AI 影视创作工作台</small></span></a>
-<nav class="nav"><a href="{{ route('home') }}">项目</a><a href="{{ route('settings') }}">模型设置</a><form method="post" action="{{ route('logout') }}">@csrf<button class="link-button">退出</button></form></nav></header>
+<nav class="nav"><a href="{{ route('home') }}">项目</a><a href="{{ route('settings') }}">模型设置</a><a href="{{ route('updates.index') }}">检查更新</a><form method="post" action="{{ route('logout') }}">@csrf<button class="link-button">退出</button></form></nav></header>
 <div class="shell">
 @if(session('ok')) <div class="notice success">{{ session('ok') }}</div> @endif
 @if($errors->any()) <div class="notice danger">@foreach($errors->all() as $error)<div>{{ $error }}</div>@endforeach</div> @endif
