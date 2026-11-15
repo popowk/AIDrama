@@ -160,7 +160,7 @@ class ReleaseManager
         if(!$lock||!flock($lock,LOCK_EX|LOCK_NB))
             throw new RuntimeException('已有更新正在运行，请查看更新状态');
         ignore_user_abort(true);
-        @set_time_limit(360);
+        if(function_exists('set_time_limit'))@set_time_limit(360);
         $tag='';
         try {
             $this->setState($root,'checking','检查最新正式版本');

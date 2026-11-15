@@ -119,7 +119,7 @@ class StudioController
         if(!$claimed) return response()->json(['status'=>'running'],202);
         // PHP processing continues if the browser refreshes while waiting.
         ignore_user_abort(true);
-        @set_time_limit(360);
+        if(function_exists('set_time_limit'))@set_time_limit(360);
         try {
             $result=$engine->generate($job->request_script,$job->request_style,(int)$job->request_shot_limit);
             DB::transaction(function() use($id,$job,$result) {

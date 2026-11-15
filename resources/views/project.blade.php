@@ -76,6 +76,10 @@ async function refreshGeneration(){
    const data=await res.json();
    renderGeneration(data);
    if(data.status==='queued')runGeneration();
+   if(data.status==='failed'){
+     const submit=document.querySelector('form[action="{{ route('project.generate',$project->id) }}"] button[type=submit]');
+     if(submit){submit.disabled=false;submit.textContent='重新尝试生成';}
+   }
    if(data.status==='done'&&!taskReloaded){taskReloaded=true;window.location.reload();}
  }catch(e){}
 }
