@@ -77,8 +77,9 @@ function install(string $root,array $input): string {
                 PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC
             ]);
         $pdo->query('SELECT 1');
-        $exists=$pdo->query("SHOW TABLES LIKE 'projects'")->fetchAll();
-        if($exists)fail('数据库中已存在 AIDrama 项目表。为了保护数据，安装程序不会覆盖旧数据。');
+        // Strict fresh install: never mix new application tables into an existing database.
+        $existing=$pdo->query('SHOW TABLES')->fetchAll();
+        if($existing)fail('全新安装必须使用空数据库。检测到数据库已有表，请在宝塔创建新数据库，不会自动删除旧数据。');
     } catch(PDOException $e) {
         fail('MySQL 连接失败。请先在宝塔创建空数据库和专用用户，并检查用户名、密码及访问权限。');
     }
@@ -94,16 +95,15 @@ function install(string $root,array $input): string {
     foreach(['artisan','vendor/autoload.php','bootstrap/app.php','public/index.php','VERSION'] as $required)
         if(!is_file($versionDir.'/'.$required))fail('安装包缺少文件 '.$required);
     if(trim((string)file_get_contents($versionDir.'/VERSION'))!==$tag)fail('安装包版本不匹配');
-    if(is_file($root.'/shared/install.lock')||is_file($root.'/shared/active-version')||
-        file_exists($root.'/current')||is_link($root.'/current'))fail('检测到已安装版本，禁止重复安装');
-    if(is_file($root.'/shared/storage/app/private/admin.hash'))fail('已有管理员数据，请先备份检查旧安装状态');
+    if(is_file($root.'/shared/.env')||is_file($root.'/shared/install.lock')||
+        is_file($root.'/shared/active-version')||file_exists($root.'/current')||
+        is_link($root.'/current')||is_file($root.'/shared/storage/app/private/admin.hash'))
+        fail('检测到之前的程序配置或管理员数据。此安装包只支持全新安装，请使用空目录及空数据库，不会清理已有数据。');
     makeDir($root.'/shared');
     foreach(['app/private','framework/cache/data','framework/sessions','framework/views','logs'] as $sub)
         makeDir($root.'/shared/storage/'.$sub);
-    $oldEnv=$root.'/shared/.env';
-    $oldContent=is_file($oldEnv)?(string)file_get_contents($oldEnv):'';
-    $key=preg_match('/^APP_KEY=base64:([A-Za-z0-9+\/=]+)$/m',$oldContent,$match)
-        ? $match[1] : base64_encode(random_bytes(32));
+    // Every new installation gets a newly generated encryption key.
+    $key=base64_encode(random_bytes(32));
     $env="APP_NAME=AIDrama\nAPP_ENV=production\nAPP_DEBUG=false\nAPP_KEY=base64:{$key}\n".
         "APP_URL=".envQuote($appUrl)."\nAPP_TIMEZONE=Asia/Shanghai\n".
         "LOG_CHANNEL=single\nLOG_LEVEL=warning\n".
@@ -115,11 +115,6 @@ function install(string $root,array $input): string {
         "SESSION_SECURE_COOKIE=".(($url['scheme']??'')==='https'?'true':'false')."\n".
         "CACHE_STORE=file\nQUEUE_CONNECTION=database\n";
     $envFile=$root.'/shared/.env';
-    if($oldContent!==''){
-        $backup=$root.'/shared/.env.before-retry-'.date('YmdHis').'-'.bin2hex(random_bytes(4));
-        if(file_put_contents($backup,$oldContent,LOCK_EX)===false)fail('无法备份上次未完成安装的配置');
-        chmod($backup,0600);
-    }
     $envTmp=$root.'/shared/.env.staging-'.bin2hex(random_bytes(4));
     if(file_put_contents($envTmp,$env,LOCK_EX)===false)fail('无法保存配置');
     chmod($envTmp,0600);
@@ -204,7 +199,7 @@ label{display:block;font-weight:600;font-size:13px;margin-bottom:14px}input{widt
 @media(max-width:650px){.checks,.cols{grid-template-columns:1fr}.panel{padding:17px}.top{display:block}}
 </style></head><body><div class="wrap">
 <div class="top"><div class="brand">▣ AIDrama <span>Setup</span></div><small>单机创作工作台 · 安全安装向导</small></div>
-<h1>欢迎安装 AIDrama</h1><p class="muted">PHP 8.4 + MySQL 5.7 · 单文件包安装，无需再从 GitHub 下载第二个安装包</p>
+<h1>全新安装 AIDrama</h1><p class="muted">PHP 8.4 + MySQL 5.7 · 完整安装包内置安装向导，无需 Node.js 和额外下载</p>
 <div class="pills"><span class="pill">01 验证身份</span><span class="pill">02 环境检查</span><span class="pill">03 配置数据库</span><span class="pill">04 自动安装</span></div>
 <?php foreach($errors as $error): ?><div class="notice"><?=esc($error)?></div><?php endforeach; ?>
 <?php if(!$unlocked): ?>
@@ -218,7 +213,7 @@ label{display:block;font-weight:600;font-size:13px;margin-bottom:14px}input{widt
 <?php foreach($checks as [$name,$ok]): ?><div class="check"><span class="<?=$ok?'ok':'bad'?>"><?=$ok?'✓':'✕'?></span> <?=esc($name)?></div><?php endforeach; ?>
 </div><p class="muted" style="margin:16px 0 0">如果 fileinfo 缺失，请先到宝塔 PHP 8.4 → 安装扩展中启用；如果目录不可写，请将该站点目录所有者设置为 www。</p></div>
 <div class="panel"><h2>03 · 网站与数据库配置</h2>
-<p class="muted">请先在宝塔创建一个空 MySQL 数据库及专用数据库用户。管理员密码由你自行决定，不限制长度或字符组合。</p>
+<p class="muted">全新安装请在宝塔创建空的 MySQL 数据库和专用账号（不要复用旧数据库）。管理员密码由你自行决定，不限制长度或字符组合。</p>
 <form method="post" autocomplete="off">
 <input type="hidden" name="csrf" value="<?=esc((string)$_SESSION['aidrama_csrf'])?>"><input type="hidden" name="action" value="install">
 <label>网站访问地址<input name="app_url" type="url" value="<?=esc($defaultUrl)?>" required placeholder="https://drama.example.com"></label>
