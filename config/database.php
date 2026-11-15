@@ -1,19 +1,26 @@
 <?php
 return [
-    'default' => env('DB_CONNECTION', 'mysql'),
-    'connections' => [
-        'mysql' => [
-            'driver' => 'mysql', 'url' => env('DB_URL'),
-            'host' => env('DB_HOST','127.0.0.1'), 'port' => env('DB_PORT','3306'),
-            'database' => env('DB_DATABASE','aidrama'), 'username' => env('DB_USERNAME','aidrama'),
-            'password' => env('DB_PASSWORD',''), 'unix_socket' => env('DB_SOCKET',''),
-            'charset' => env('DB_CHARSET','utf8mb4'), 'collation' => env('DB_COLLATION','utf8mb4_unicode_ci'),
-            'prefix' => '', 'prefix_indexes' => true, 'strict' => true, 'engine' => null,
+    'default'=>env('DB_CONNECTION','mysql'),
+    'connections'=>[
+        'mysql'=>[
+            'driver'=>'mysql','url'=>env('DB_URL'),
+            'host'=>env('DB_HOST','127.0.0.1'),'port'=>env('DB_PORT','3306'),
+            'database'=>env('DB_DATABASE','aidrama'),'username'=>env('DB_USERNAME','aidrama'),
+            // Password is base64 encoded for dotenv compatibility, not encryption.
+            // The .env holding it is private and never in the web document root.
+            'password'=>env('DB_PASSWORD_B64')
+                ? base64_decode((string)env('DB_PASSWORD_B64'),true)
+                : env('DB_PASSWORD',''),
+            'unix_socket'=>env('DB_SOCKET',''),
+            'charset'=>env('DB_CHARSET','utf8mb4'),
+            'collation'=>env('DB_COLLATION','utf8mb4_unicode_ci'),
+            'prefix'=>'','prefix_indexes'=>true,'strict'=>true,'engine'=>null,
         ],
-        'sqlite' => [
-            'driver'=>'sqlite','url'=>env('DB_URL'),'database'=>env('DB_DATABASE',database_path('database.sqlite')),
+        'sqlite'=>[
+            'driver'=>'sqlite','url'=>env('DB_URL'),
+            'database'=>env('DB_DATABASE',database_path('database.sqlite')),
             'prefix'=>'','foreign_key_constraints'=>env('DB_FOREIGN_KEYS',true),
         ],
     ],
-    'migrations' => 'migrations',
+    'migrations'=>'migrations',
 ];

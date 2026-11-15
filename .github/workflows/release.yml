@@ -25,6 +25,10 @@ jobs:
           set -euo pipefail
           mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs
           find app bootstrap config routes database public deploy -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          test ! -e public/storage
+          if find public -type f \( -name '.env' -o -name '*.sql' -o -name '*.sqlite' -o -name '*.log' -o -name '*.bak' -o -name '*.zip' \) | grep -q .; then
+            echo 'Forbidden public files found'; exit 1
+          fi
           composer validate --no-check-publish
           composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
           php artisan --version
@@ -50,7 +54,10 @@ jobs:
             --exclude='storage/' --exclude='node_modules/' --exclude='tests/'
           printf '%s\n' "$VERSION" > "$RUNNER_TEMP/package/VERSION"
           (cd "$RUNNER_TEMP/package" && zip -qr "$GITHUB_WORKSPACE/AIDrama.zip" .)
+          mkdir -p "$RUNNER_TEMP/installer/current/public"
+          cp bootstrap/installer.php "$RUNNER_TEMP/installer/current/public/index.php"
+          (cd "$RUNNER_TEMP/installer" && zip -qr "$GITHUB_WORKSPACE/AIDrama-Installer.zip" current)
           sha256sum AIDrama.zip > AIDrama.zip.sha256
-          gh release create "$VERSION" AIDrama.zip AIDrama.zip.sha256 \
+          gh release create "$VERSION" AIDrama.zip AIDrama.zip.sha256 AIDrama-Installer.zip \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "AIDrama $VERSION" --generate-notes --latest

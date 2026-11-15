@@ -99,8 +99,9 @@ try{
    if(!copy($tmp.'/.env.example',$root.'/shared/.env'))stop('复制 .env.example 失败');
    chmod($root.'/shared/.env',0600);msg('首次创建 shared/.env，请先配置 APP_KEY 和 DB');
   }
-  if(!symlink($root.'/shared/.env',$tmp.'/.env')||!symlink($root.'/shared/storage',$tmp.'/storage')
-    ||!symlink($root.'/shared/storage/app/public',$tmp.'/public/storage'))stop('共享目录软链接失败');
+  if(!symlink($root.'/shared/.env',$tmp.'/.env')||!symlink($root.'/shared/storage',$tmp.'/storage'))
+    stop('共享目录软链接失败');
+  // No public/storage symlink; every user asset remains private.
   mkdirSafe($tmp.'/bootstrap/cache');
   if(!rename($tmp,$dir))stop('版本保存失败');
   msg('新版本预备目录: '.$dir);

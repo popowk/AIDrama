@@ -1,0 +1,8 @@
+# Baota / OpenResty reference rules.
+# Only expose /www/wwwroot/AIDrama/current/public as document root.
+# Add inside server {} after checking conflicts with Baota PHP includes.
+autoindex off;
+location ~ /\.(?!well-known/) { return 404; }
+location ~* \.(?:env|ini|log|sql|sqlite|db|bak|old|zip|tar|gz)$ { return 404; }
+location ^~ /storage/ { return 404; }
+# Never place user uploads under public/. No public storage link is created.
