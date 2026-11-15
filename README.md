@@ -1,86 +1,91 @@
 # AIDrama · AI 影视创作工作台
 
-AIDrama 是面向单用户的 PHP/Laravel 剧本、AI 分镜与资产规划平台。工作流程参考 [雪风 AI 短剧工坊](https://github.com/oiuv/ai-short-drama)，技能设计参考 [Drama Skills](https://github.com/zenstory-ai/drama-skills)。这是独立的 PHP 实现，没有复制上述项目的完整源码。
+基于 Laravel 13 + PHP 8.4 + MySQL 5.7.44 的单机 AI 分镜创作平台。前端 Blade + 原生 JavaScript，运行不需要 Node.js。设计参考雪风 AI 短剧工坊 (https://github.com/oiuv/ai-short-drama)，Skills 方向参考 Drama Skills (https://github.com/zenstory-ai/drama-skills)；当前是独立实现，并非原版源码改写。
 
-## 已完成（v0.1.0）
+## 已实现
 
-- 管理员登录（私有存储中的密码哈希）
-- 剧本项目、画风、15/30 秒上限、AI 自动分镜及过长台词拆镜
-- OpenAI 兼容文本 API（服务端加密保存密钥）
-- 人物/场景/道具资产清单，编辑镜头及预计时长
-- 可灵 Kling、Seedance、Stable Diffusion 提示词初步模板及项目 JSON 导出
-- PHP 环境检测，GitHub Releases 安装包，安全的版本化更新和回滚
+- 单机管理员密码登录；API Key 在服务器端加密保存
+- 剧本项目、风格、最长 15/30 秒的单镜头上限
+- OpenAI 兼容文本 API、AI 分镜与时长估算、超长台词拆镜
+- 人物/场景/道具资产清单、镜头编辑、项目 JSON 导出
+- 可灵、Seedance、Stable Diffusion 提示词的初版模板
+- 网页安装向导、环境检测、版本化部署和 GitHub Release 自动更新
 
-还未实现：实际图片/三视图生成、声音参考音频和 Voice ID、完整 Drama Skills 引擎、视频生成、后台异步任务；下一阶段继续补齐。当前分镜生成使用同步 API 请求，请确认 PHP-FPM 超时支持。
+还未实现实际三视图出图、真实声音资产/Voice ID、完整 Drama Skills 引擎、图片与视频生成、异步任务。镜头时长目前是规划估算，而不是根据真实配音测量。
 
-## 宝塔 OpenResty 安装（PHP 8.4 + MySQL 5.7.44）
+## 宝塔首次安装：图形化向导
 
-无需 Node.js、Redis、Python 或 Supervisor；GitHub Actions 打包的 Release ZIP 已包含 vendor 依赖。
+服务器要求：OpenResty + PHP 8.4 + MySQL 5.7。PHP 必需扩展为 fileinfo、curl、openssl、mbstring、pdo_mysql、zip 等，安装页面会自动检测。无需服务器安装 Node.js、Composer、Python、Redis、Supervisor、Docker。
 
-### 1. 环境检查
+### 只需首次准备
 
-在宝塔 PHP 8.4 扩展管理里安装 fileinfo（你的检测日志中它缺失），并检查 ZIP 重复加载警告。运行：
+1. 在宝塔添加网站，绑定域名并启用 HTTPS，选择 PHP 8.4。网站根目录必须指向：
+   
+       /www/wwwroot/AIDrama/current/public
 
-    mkdir -p /www/wwwroot/AIDrama/deploy
-    curl -fL https://raw.githubusercontent.com/popowk/AIDrama/main/deploy/preflight.php -o /www/wwwroot/AIDrama/deploy/preflight.php
-    /www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/preflight.php
+   不能指向 AIDrama、current 或 releases 的上级目录。建议 PHP 运行用户使用宝塔默认的 www，并确保 www 对 AIDrama 安装目录有写权限。如果宝塔的 PHP 防跨站 open_basedir 限制只能访问 public，请调整为允许访问整个 AIDrama 安装目录，否则安装器无法创建共享私有数据。
 
-环境检查只读，不会自动安装扩展。日志记录的服务器架构为 x86_64 而非 ARM，请确认部署的是同一台服务器。
+2. 在宝塔 MySQL 管理页面，创建一个空数据库和独立用户，记下数据库名、账号和密码。不要使用 MySQL root 账号作为网站账号。
 
-### 2. 初次安装
+3. 打开 [最新正式版本](https://github.com/popowk/AIDrama/releases/latest)，下载 **AIDrama-Installer.zip**，通过宝塔文件管理器上传到 /www/wwwroot/AIDrama 并解压到此目录，确认存在：
 
-在 GitHub Actions 成功发布正式 Release 后运行（始终下载最新版本）：
+       /www/wwwroot/AIDrama/current/public/index.php
 
-    curl -fL https://raw.githubusercontent.com/popowk/AIDrama/main/deploy/update.php -o /www/wwwroot/AIDrama/deploy/update.php
-    chown -R www:www /www/wwwroot/AIDrama
-    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php check'
-    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
+   这个小安装包只有一次性启动网页的代码。**它只能解压到尚未安装程序的空目录，不能覆盖已有 AIDrama 网站。**
 
-首次 apply 会创建 shared/.env、shared/storage 和 releases/vX.Y.Z（以实际最新版本号为准），然后因 APP_KEY 尚未设置而主动暂停切换。接下来：
+4. 浏览器使用 HTTPS 访问网站首页，即可进入 AIDrama Setup 向导。首次访问会在下面的位置生成一次性安装口令（这个口令文件无法通过网址访问）：
 
-1. 宝塔新建数据库 aidrama 及独立 MySQL 用户，在 /www/wwwroot/AIDrama/shared/.env 设置 DB_ 开头的连接参数、APP_URL、APP_ENV=production、APP_DEBUG=false；启用 HTTPS 后设 SESSION_SECURE_COOKIE=true。
-2. 执行以下命令生成应用密钥，切勿在升级时重新生成：
+       /www/wwwroot/AIDrama/shared/setup-token.txt
 
-       cd /www/wwwroot/AIDrama/releases/$(ls /www/wwwroot/AIDrama/releases | sort -V | tail -n 1)
-       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan key:generate --force'
+   用宝塔文件管理器打开此文件，复制内容到网页的「一次性安装口令」字段。验证后才能显示服务器检测和安装表单。
 
-3. 再执行 apply，然后初始化数据库和管理员密码：
+5. 按网页提示检查 PHP 扩展、网站文档根目录和可写权限；输入 MySQL 地址、端口、库名、用户名、密码、网站 HTTPS 地址与新的管理员密码（至少 12 位），点击「检查数据库并一键安装」。
 
-       su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/update.php apply'
-       cd /www/wwwroot/AIDrama/current
-       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan migrate --force'
-       su -s /bin/sh www -c '/www/server/php/84/bin/php artisan aidrama:set-password'
+网页安装器将自动检测数据库连接、下载最新 GitHub Release、校验 SHA256、解压完整版 PHP 程序、生成 APP_KEY、初始化 MySQL 表、保存管理员密码的安全哈希，并切换到正式版本。安装成功会自动跳转到 /login，并删除一次性安装口令和公开的启动脚本。**不需要在宝塔终端运行 Artisan 命令，不需要手工编辑 .env。**
 
-4. 在宝塔把网站根目录设为 /www/wwwroot/AIDrama/current/public，PHP 版本选 8.4，伪静态设置为：
+### 宝塔伪静态
 
-       location / {
-           try_files $uri $uri/ /index.php?$query_string;
-       }
+建议在宝塔网站设置中使用 Laravel 兼容的伪静态；如果尚未有等效规则，可配置：
 
-5. 确保 PHP-FPM 用户可读 shared/.env 和 vendor，可写 shared/storage 和 releases/*/bootstrap/cache。最好使用与 PHP-FPM 兼容的非 root 账户运行部署脚本，避免 0600 权限阻止读密钥。
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
-访问站点并用刚设置的管理员密码登录。
+还可参考仓库的 deploy/nginx-security.conf.example，但不要在已有宝塔 PHP 规则上直接添加冲突的 location 块。
 
-### 3. GitHub 自动更新
+## 安全：公开目录只有必要的网页入口
 
-每次代码推送到 main 后，GitHub Actions 会自动发布新的正式 Release，无需手动修改版本号。VERSION 只用来设定主版本和次版本，补丁版本由 Actions 构建序号自动递增；发布包自带全部 PHP vendor，不需在宝塔服务器运行 Composer/npm。
+网页根目录必须为：
 
-宝塔「计划任务」添加 Shell 每小时执行：
+    /www/wwwroot/AIDrama/current/public
+
+下面这些文件**全部在 public 之外**，不会成为网页可直接下载的文件：
+
+- shared/.env：Laravel APP_KEY、数据库连接，文件权限 0600
+- shared/storage/app/private：登录密码哈希、后续 API 密钥和私有资产
+- shared/storage/logs：运行日志
+- shared/setup-token.txt：安装时的一次性口令，完成后删除
+- releases：完整应用代码和 vendor 依赖，不能作为网站根目录
+- 数据库、备份：不要上传到公开的网站目录
+
+应用不创建 public/storage 软链接，更新器和 GitHub Actions 会拒绝敏感内容出现在发布包的公开目录中。管理端 HTTP 响应启用防嵌入、禁止 MIME 猜测和不缓存等安全响应头。
+
+**注意：敏感配置一定需要存储在服务器磁盘上，不能凭空消失。这里采用的是“物理保存于 public 之外 + 限制权限”，而不是把秘密放在公开目录后只隐藏链接。** 如果误把宝塔网站根目录指向 AIDrama 项目上级目录，仍会造成严重泄露风险，因此安装器会检查正确的网站根目录才允许继续。
+
+## GitHub 自动更新（一次性配置）
+
+代码每次推送 main，GitHub Actions 会运行 PHP 检查、Laravel 启动验证、SQLite 测试迁移，以及 MySQL 5.7 迁移检查；通过后生成一个带 PHP vendor 的正式 Release。以后宝塔服务器不需要运行 Composer。
+
+首次安装完毕后，在宝塔「计划任务」新增每小时执行的 Shell 任务：
 
     su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php apply'
 
-检查新版本：
-
-    su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php check'
-
-回滚代码：
+更新脚本会检查 GitHub Release，用 SHA256 验证包、保留 shared/.env、shared/storage 和 MySQL，采用版本目录及软链接切换。数据库迁移发生变更时自动暂停，不会擅自改动数据表；需备份审核后手动迁移。代码回滚命令：
 
     su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/current/deploy/update.php rollback'
 
-更新脚本使用 GitHub 官方 Release、SHA256、ZIP 路径验证、独立版本目录及原子软链接切换。不会覆盖 shared/.env、shared/storage 或 MySQL 数据。数据库迁移文件变化时默认停止自动升级；备份数据库并审核迁移后可手动执行 apply --allow-migrations（此命令不会自动迁移数据库，须手动执行迁移）。
+如果你不想添加自动计划任务，也可以在宝塔终端手工执行上面相同的更新命令；目前管理员后台尚未提供一键更新按钮。
 
-注意：SHA256 提供完整性验证，但如果 GitHub 账户本身失陷，它不能提供独立可信签名。请启用 GitHub 双因素认证。旧 MySQL 5.7 已结束官方维护，需限制其网络暴露。站点 Web 根目录必须指向 current/public，不能指向仓库根目录。
+## 测试状态及限制
 
-### 开发与授权
-
-框架 Laravel 13 / PHP 8.4 / MySQL 5.7 兼容模式。前端 Blade + 原生 JS，无 Vite/Node。技能目录 skills/ 目前为 AIDrama 自编的初版说明，不会擅自执行互联网上的未知 Python 脚本。应用首次发布前仍需通过 GitHub Actions 与真实宝塔环境测试。
+GitHub Actions 的 PHP 语法检查、Laravel 命令启动和测试数据库迁移，不等同于已经在你实际的宝塔/OpenResty 系统中完成全流程安装测试。首次上线请用新建空库先测试，确保 PHP-FPM 超时、HTTPS 和站点目录权限设置正确。MySQL 5.7 已结束常规安全维护，数据库建议仅允许内网/本机访问。
