@@ -75,12 +75,13 @@ jobs:
           VERSION="${BASE%.*}.$GITHUB_RUN_NUMBER"
           if gh release view "$VERSION" >/dev/null 2>&1; then exit 0; fi
           BUNDLE="$RUNNER_TEMP/bundle"
-          mkdir -p "$BUNDLE/public" "$BUNDLE/bootstrap" "$BUNDLE/releases/$VERSION"
+          mkdir -p "$BUNDLE/public" "$BUNDLE/bootstrap" "$BUNDLE/deploy" "$BUNDLE/releases/$VERSION"
           rsync -a ./ "$BUNDLE/releases/$VERSION/" --exclude='.git/' --exclude='.github/' --exclude='.env' --exclude='storage/' --exclude='node_modules/' --exclude='tests/' --exclude='bootstrap/cache/'
           cp bootstrap/laravel-entry.php "$BUNDLE/releases/$VERSION/public/index.php"
           printf '%s\n' "$VERSION" > "$BUNDLE/releases/$VERSION/VERSION"
           cp public/index.php public/app.css "$BUNDLE/public/"
           cp bootstrap/installer.php "$BUNDLE/bootstrap/installer.php"
+          cp deploy/update.php "$BUNDLE/deploy/update.php"
           test ! -e "$BUNDLE/public/storage"
           (cd "$BUNDLE" && zip -qr "$GITHUB_WORKSPACE/AIDrama.zip" .)
           sha256sum AIDrama.zip > AIDrama.zip.sha256
@@ -90,6 +91,7 @@ jobs:
           unzip -q AIDrama.zip -d "$CHECK_DIR"
           test -f "$CHECK_DIR/public/index.php"
           test -f "$CHECK_DIR/bootstrap/installer.php"
+          test -f "$CHECK_DIR/deploy/update.php"
           test -f "$CHECK_DIR/releases/$VERSION/vendor/autoload.php"
           test -f "$CHECK_DIR/releases/$VERSION/public/index.php"
           test ! -e "$CHECK_DIR/public/storage"
