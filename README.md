@@ -121,20 +121,20 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 如果诊断显示迁移未执行，先备份数据库，再从后台补齐迁移（或使用当前正式版的 `php artisan migrate --force` 并确认配置从 shared 加载），不要直接手动删除表或修改 migration 记录。若网站入口已经无法使用，先将最新 ZIP 解压到原站点目录覆盖 `public/index.php` 和完整版本代码，保留 shared/，然后重启 PHP-FPM 并查看上述日志。
 ### HTTP 500：Target class [view] does not exist
 
-较早版本的 \`config/app.php\` 没有显式保存 Laravel 默认 ServiceProvider 列表；在执行 Laravel \`config:cache\` 后，Laravel 的 \`RegisterProviders\` 会直接读取已缓存配置而跳过默认列表合并，因此可能遗漏 \`Illuminate\View\ViewServiceProvider\`（也可能遗漏 Session 等服务提供者）。网页于是报出 \`Target class [view] does not exist\`。
+较早版本的 `config/app.php` 没有显式保存 Laravel 默认 ServiceProvider 列表；在执行 Laravel `config:cache` 后，Laravel 的 `RegisterProviders` 会直接读取已缓存配置而跳过默认列表合并，因此可能遗漏 `Illuminate\View\ViewServiceProvider`（也可能遗漏 Session 等服务提供者）。网页于是报出 `Target class [view] does not exist`。
 
-新版已在 \`config/app.php\` 写入完整默认 ServiceProvider 列表，并在启动时检测和清理旧版缺少服务提供者的 \`bootstrap/cache/config.php\`。已安装老版本可先执行以下**只清理自动生成缓存**的指令（保留 shared、MySQL 数据库、素材和管理员密码），随后在宝塔重启 PHP 8.4 服务：
+新版已在 `config/app.php` 写入完整默认 ServiceProvider 列表，并在启动时检测和清理旧版缺少服务提供者的 `bootstrap/cache/config.php`。已安装老版本可先执行以下**只清理自动生成缓存**的指令（保留 shared、MySQL 数据库、素材和管理员密码），随后在宝塔重启 PHP 8.4 服务：
 
-\`\`\`bash
+```bash
 SITE="/www/wwwroot/drama.tmd.pet"
 VER="$(cat "$SITE/shared/active-version")"
 CACHE="$SITE/releases/$VER/bootstrap/cache"
 if [ -d "$CACHE" ]; then
   rm -f "$CACHE/config.php" "$CACHE/services.php" "$CACHE/packages.php"
 fi
-\`\`\`
+```
 
-再刷新登录页，成功恢复后通过后台「检查更新」升级到修正版。注意：错误日志显示的版本未必等于当前版本标记，应使用上面的动态版本路径检查。若仍有错误，请运行只读 \`deploy/diagnose.php\`，它现在会显示视图服务注册状态；不要清空数据库或删除 \`shared/\`。
+再刷新登录页，成功恢复后通过后台「检查更新」升级到修正版。注意：错误日志显示的版本未必等于当前版本标记，应使用上面的动态版本路径检查。若仍有错误，请运行只读 `deploy/diagnose.php`，它现在会显示视图服务注册状态；不要清空数据库或删除 `shared/`。
 
 ## 目前功能与限制
 
