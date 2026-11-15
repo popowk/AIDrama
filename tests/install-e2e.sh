@@ -42,19 +42,24 @@ test -f "$SMOKE/shared/active-version"
 test "$(cat "$SMOKE/shared/active-version")" = "$(ls "$SMOKE/releases" | sort -V | tail -n1)"
 test -f "$SMOKE/shared/install.lock"
 test -f "$SMOKE/shared/storage/app/private/admin.hash"
-grep -q '^sha256\
+grep -q '^sha256' "$SMOKE/shared/storage/app/private/admin.hash"
 test ! -e "$SMOKE/shared/setup-token.txt"
 test ! -e "$SMOKE/public/.env"
 test ! -e "$SMOKE/public/storage"
-curl -fsS http://127.0.0.1:18868/login > "$RUNNER_TEMP/login.html"
-grep -q 'AIDrama' "$RUNNER_TEMP/login.html"
-echo "E2E setup succeeds and private state stays outside public"
- "$SMOKE/shared/storage/app/private/admin.hash"
 test ! -e "$SMOKE/releases/$(cat "$SMOKE/shared/active-version")/.env"
 test ! -e "$SMOKE/releases/$(cat "$SMOKE/shared/active-version")/storage"
-test ! -e "$SMOKE/shared/setup-token.txt"
-test ! -e "$SMOKE/public/.env"
-test ! -e "$SMOKE/public/storage"
-curl -fsS http://127.0.0.1:18868/login > "$RUNNER_TEMP/login.html"
+curl -fsS -b "$COOKIE" -c "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/login.html"
 grep -q 'AIDrama' "$RUNNER_TEMP/login.html"
-echo "E2E setup succeeds and private state stays outside public"
+TOKEN_LOGIN="$(sed -n 's/.*name="_token" value="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/login.html" | head -1)"
+test -n "$TOKEN_LOGIN"
+curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/login.headers" \
+  --data-urlencode "_token=$TOKEN_LOGIN" --data-urlencode 'password=7' \
+  http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-response.html"
+if ! grep -qi 'location: http://127.0.0.1:18868/' "$RUNNER_TEMP/login.headers" &&
+   ! grep -qi 'location: /' "$RUNNER_TEMP/login.headers"; then
+  echo 'Short admin password did not authenticate'
+  tail -40 "$RUNNER_TEMP/setup-server.log"
+  cat "$RUNNER_TEMP/login.headers"
+  exit 1
+fi
+echo "E2E setup and login succeed with symlink disabled; private state is outside public"
