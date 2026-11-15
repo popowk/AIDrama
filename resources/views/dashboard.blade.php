@@ -7,6 +7,7 @@
 <label>项目名称<input name="name" required maxlength="191" placeholder="例如：悟空八戒的大棚监控故事"></label>
 <div class="inline-fields"><label>统一画风<select name="style"><option>3D国风动画</option><option>写实电影</option><option>日系动漫</option><option>二维国漫</option><option>赛博朋克</option><option>纪录片实拍</option></select></label>
 <label>单镜头最长<select name="shot_limit"><option value="15" selected>15 秒（默认）</option><option value="30">30 秒</option></select></label></div>
+<label>创作形式<select name="script_mode"><option value="auto" selected>自动识别纯口播 / 文案＋口播</option><option value="talking">纯口播</option><option value="mixed">文案＋口播</option></select></label>
 <label>完整剧本<textarea name="script" rows="12" maxlength="100000" required placeholder="粘贴剧本、台词和场景描述。建好项目后点击「AI 生成分镜」..."></textarea></label>
 <button class="button primary wide" type="submit">创建项目 →</button></form></section>
 <section class="panel"><div class="section-heading"><h2>最近的项目</h2><span class="muted">{{ $projects->total() }} 个</span></div>
