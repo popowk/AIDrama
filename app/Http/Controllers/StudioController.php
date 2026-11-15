@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 
 use App\Services\StoryboardEngine;
 use App\Services\PromptBuilder;
+use App\Services\PromptPresets;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -20,10 +21,13 @@ class StudioController
         $v=$request->validate([
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
+            'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
+            'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
         ]);
         $id=DB::table('projects')->insertGetId([
             'name'=>$v['name'],'script'=>$v['script'],'style'=>$v['style'],
-            'shot_limit'=>(int)$v['shot_limit'],'status'=>'draft',
+            'shot_limit'=>(int)$v['shot_limit'],
+            'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
             'created_at'=>now(),'updated_at'=>now(),
         ]);
         return redirect()->route('project.show',$id)->with('ok','项目已建立');
@@ -70,6 +74,7 @@ class StudioController
                 'project_id'=>$id,'status'=>'queued','attempts'=>0,'error_message'=>null,
                 'request_script'=>$project->script,'request_style'=>$project->style,
                 'request_shot_limit'=>$project->shot_limit,
+                'request_mode'=>$project->script_mode??'auto',
                 'created_at'=>now(),'updated_at'=>now(),
             ]);
             DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
@@ -121,11 +126,14 @@ class StudioController
         ignore_user_abort(true);
         if(function_exists('set_time_limit'))@set_time_limit(360);
         try {
+            $engine->setMode((string)($job->request_mode??'auto'));
             $result=$engine->generate($job->request_script,$job->request_style,(int)$job->request_shot_limit);
             DB::transaction(function() use($id,$job,$result) {
                 $current=DB::table('generation_jobs')->where('id',$job->id)->lockForUpdate()->first();
                 if(!$current || $current->status!=='running')
                     throw new RuntimeException('此生成任务已过期，结果不会覆盖当前分镜。');
+                $previous=DB::table('assets')->where('project_id',$id)->get()
+                    ->keyBy(static fn($a)=>$a->type.'|'.$a->name);
                 DB::table('shots')->where('project_id',$id)->delete();
                 DB::table('assets')->where('project_id',$id)->delete();
                 foreach ($result['shots'] as $i=>$shot) {
@@ -133,19 +141,45 @@ class StudioController
                         'project_id'=>$id,'sequence'=>$i+1,'title'=>$shot['title'],
                         'visual'=>$shot['visual'],'dialogue'=>$shot['dialogue'],
                         'action_before'=>$shot['action_before'],
+                        'on_screen_text'=>$shot['on_screen_text']??null,
+                        'delivery'=>$shot['delivery']??'on_camera',
                         'duration_seconds'=>$shot['duration_seconds'],'prompt'=>$shot['prompt'],
                         'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
+                $included=[];
                 foreach($result['assets'] as $asset) {
+                    $key=$asset['type'].'|'.$asset['name'];
+                    $included[$key]=true;
+                    $old=$previous->get($key);
+                    if($old&&$old->file_path) {
+                        // Re-generation must not discard customer's uploaded assets.
+                        $asset['file_path']=$old->file_path;
+                        $asset['source_kind']=$old->source_kind==='upload'?'upload':($asset['source_kind']??'generate');
+                        $asset['image_status']=$old->image_status;
+                    }
                     DB::table('assets')->insert($asset+[
                         'project_id'=>$id,'created_at'=>now(),'updated_at'=>now(),
+                    ]);
+                }
+                // Keep uploads even if the new AI response omitted that brand asset.
+                foreach($previous as $key=>$old) {
+                    if(isset($included[$key])||$old->source_kind!=='upload'||!$old->file_path)continue;
+                    DB::table('assets')->insert([
+                        'project_id'=>$id,'type'=>$old->type,'name'=>$old->name,
+                        'description'=>$old->description,'prompt'=>$old->prompt,
+                        'voice_description'=>$old->voice_description,
+                        'source_kind'=>'upload','image_status'=>'uploaded',
+                        'file_path'=>$old->file_path,'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
                 DB::table('generation_jobs')->where('id',$job->id)->update([
                     'status'=>'done','finished_at'=>now(),'updated_at'=>now(),
                 ]);
-                DB::table('projects')->where('id',$id)->update(['status'=>'ready','updated_at'=>now()]);
+                DB::table('projects')->where('id',$id)->update([
+                    'status'=>'ready','detected_mode'=>$result['script_mode']??null,
+                    'updated_at'=>now(),
+                ]);
             });
             return response()->json(['status'=>'done','shots'=>count($result['shots'])]);
         } catch(\Throwable $e) {
@@ -172,6 +206,8 @@ class StudioController
         $v=$request->validate([
             'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
             'dialogue'=>'nullable|string|max:20000','action_before'=>'nullable|string|max:5000',
+            'on_screen_text'=>'nullable|string|max:5000',
+            'delivery'=>['sometimes',Rule::in(['on_camera','voiceover','none'])],
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
@@ -186,6 +222,16 @@ class StudioController
     }
     public function settings() {
         $rows=DB::table('settings')->where('key','like','ai.%')->pluck('value','key');
+        $prompts=[];
+        foreach(PromptPresets::LABELS as $kind=>$label) {
+            $prompts[$kind]=[
+                'label'=>$label,'mode'=>PromptPresets::mode($kind),
+                'reference'=>PromptPresets::reference($kind),
+                'custom'=>PromptPresets::custom($kind),
+                'source'=>PromptPresets::SOURCES[$kind],
+                'source_url'=>PromptPresets::LINKS[$kind],
+            ];
+        }
         return view('settings',[
             'textApiBase'=>$rows['ai.text.api_base']??$rows['ai.api_base']??'https://api.openai.com/v1',
             'textModel'=>$rows['ai.text.model']??$rows['ai.model']??'',
@@ -193,7 +239,22 @@ class StudioController
             'imageApiBase'=>$rows['ai.image.api_base']??'https://api.openai.com/v1',
             'imageModel'=>$rows['ai.image.model']??'',
             'imageHasKey'=>!empty($rows['ai.image.api_key']??null),
+            'prompts'=>$prompts,
         ]);
+    }
+    public function savePromptSettings(Request $request) {
+        $v=$request->validate([
+            'kind'=>['required',Rule::in(array_keys(PromptPresets::LABELS))],
+            'mode'=>['required',Rule::in(['reference','custom'])],
+            'reference'=>'required|string|max:25000',
+            'custom'=>'nullable|string|max:25000',
+        ]);
+        PromptPresets::save($v['kind'],$v['mode'],$v['reference'],$v['custom']??'');
+        return back()->with('ok','已保存「'.PromptPresets::LABELS[$v['kind']].'」提示词，后续生成会使用当前选定模式');
+    }
+    public function resetPromptSettings(string $kind) {
+        PromptPresets::reset($kind);
+        return back()->with('ok','已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词');
     }
     public function saveSettings(Request $request) {
         $v=$request->validate([
