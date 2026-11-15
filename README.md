@@ -119,6 +119,23 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 诊断会输出版本指针是否有效、release 文件完整性、共享缓存目录写入权限、Laravel 启动与 MySQL 连接是否成功、迁移缺失数量等。**CLI 与 PHP-FPM 可能加载不同的 php.ini 和 open_basedir**；命令行通过不代表网页一定正常。频繁覆盖版本后，可在宝塔中重启 PHP 8.4 服务以清理旧的 OPcache / PHP-FPM 进程，不要仅靠清空浏览器缓存。
 
 如果诊断显示迁移未执行，先备份数据库，再从后台补齐迁移（或使用当前正式版的 `php artisan migrate --force` 并确认配置从 shared 加载），不要直接手动删除表或修改 migration 记录。若网站入口已经无法使用，先将最新 ZIP 解压到原站点目录覆盖 `public/index.php` 和完整版本代码，保留 shared/，然后重启 PHP-FPM 并查看上述日志。
+### HTTP 500：Target class [view] does not exist
+
+较早版本的 \`config/app.php\` 没有显式保存 Laravel 默认 ServiceProvider 列表；在执行 Laravel \`config:cache\` 后，Laravel 的 \`RegisterProviders\` 会直接读取已缓存配置而跳过默认列表合并，因此可能遗漏 \`Illuminate\View\ViewServiceProvider\`（也可能遗漏 Session 等服务提供者）。网页于是报出 \`Target class [view] does not exist\`。
+
+新版已在 \`config/app.php\` 写入完整默认 ServiceProvider 列表，并在启动时检测和清理旧版缺少服务提供者的 \`bootstrap/cache/config.php\`。已安装老版本可先执行以下**只清理自动生成缓存**的指令（保留 shared、MySQL 数据库、素材和管理员密码），随后在宝塔重启 PHP 8.4 服务：
+
+\`\`\`bash
+SITE="/www/wwwroot/drama.tmd.pet"
+VER="$(cat "$SITE/shared/active-version")"
+CACHE="$SITE/releases/$VER/bootstrap/cache"
+if [ -d "$CACHE" ]; then
+  rm -f "$CACHE/config.php" "$CACHE/services.php" "$CACHE/packages.php"
+fi
+\`\`\`
+
+再刷新登录页，成功恢复后通过后台「检查更新」升级到修正版。注意：错误日志显示的版本未必等于当前版本标记，应使用上面的动态版本路径检查。若仍有错误，请运行只读 \`deploy/diagnose.php\`，它现在会显示视图服务注册状态；不要清空数据库或删除 \`shared/\`。
+
 ## 目前功能与限制
 
 - 已实现：单机管理员登录、文本/图片两类独立模型配置、后台检查更新与一键更新、MySQL 分镜生成任务与状态轮询、剧本项目管理、15/30 秒单镜限制、AI 分镜与台词时长估算、人物/场景/道具文本清单、镜头编辑与初版可灵/Seedance/Stable Diffusion 提示词、项目 JSON 导出。
