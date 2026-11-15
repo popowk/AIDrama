@@ -69,4 +69,14 @@ if ! grep -qi 'location: http://127.0.0.1:18868' "$RUNNER_TEMP/login.headers" &&
   cat "$RUNNER_TEMP/login.headers"
   exit 1
 fi
-echo "E2E setup and login succeed with symlink disabled; private state is outside public"
+# Confirm both model categories and the authenticated update center are reachable.
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/settings > "$RUNNER_TEMP/models.html"
+grep -q '文本模型' "$RUNNER_TEMP/models.html"
+grep -q '图片模型' "$RUNNER_TEMP/models.html"
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates > "$RUNNER_TEMP/updates.html"
+grep -q '检查更新' "$RUNNER_TEMP/updates.html"
+grep -q '一键更新' "$RUNNER_TEMP/updates.html"
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
+grep -q 'idle' "$RUNNER_TEMP/update-state.json"
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$c=$p->query("SHOW TABLES LIKE \'generation_jobs\'")->fetchColumn();if(!$c)exit(1);'
+echo "E2E install, login, text/image settings and update UI all passed"
