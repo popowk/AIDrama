@@ -51,6 +51,20 @@ jobs:
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php artisan migrate --force
           rm -f database/database.sqlite
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php artisan migrate --force
+          # Smoke test the stand-alone browser bootstrap without secrets or an installed app
+          mkdir -p "$RUNNER_TEMP/aidrama-smoke/current/public"
+          cp bootstrap/installer.php "$RUNNER_TEMP/aidrama-smoke/current/public/index.php"
+          php -S 127.0.0.1:18868 -t "$RUNNER_TEMP/aidrama-smoke/current/public" > "$RUNNER_TEMP/installer-server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 2
+          curl -fsS http://127.0.0.1:18868/ -o "$RUNNER_TEMP/installer.html"
+          grep -q "验证安装身份" "$RUNNER_TEMP/installer.html"
+          test -f "$RUNNER_TEMP/aidrama-smoke/shared/setup-token.txt"
+          test ! -e "$RUNNER_TEMP/aidrama-smoke/shared/.env"
+          test ! -e "$RUNNER_TEMP/aidrama-smoke/current/public/shared/setup-token.txt"
+          kill "$SERVER_PID" 2>/dev/null || true
+          trap - EXIT
       - name: Publish immutable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
