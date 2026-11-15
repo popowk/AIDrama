@@ -13,7 +13,7 @@ if(is_file($cachedConfig)) {
     $cached=@require $cachedConfig;
     $providers=is_array($cached) ? ($cached['app']['providers']??[]) : [];
     if(!is_array($providers)||
-        !in_array(\\Illuminate\\View\\ViewServiceProvider::class,$providers,true)) {
+        !in_array(\Illuminate\View\ViewServiceProvider::class,$providers,true)) {
         if(!@unlink($cachedConfig))
             throw new RuntimeException('旧版 Laravel 配置缓存缺失 view 服务提供者，请删除当前版本 bootstrap/cache/config.php 后重启 PHP-FPM');
         if(function_exists('opcache_invalidate'))@opcache_invalidate($cachedConfig,true);
