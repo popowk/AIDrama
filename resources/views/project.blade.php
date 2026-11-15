@@ -23,11 +23,16 @@
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
 <div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
 <p class="hint">时长依据中文台词字符与开口前动作估算，不等同真实配音时长；超过上限的台词会继续拆分为连续镜头。</p>
-<div class="section-heading space"><h2>03 / 资产清单</h2><span class="muted">真实上传 / AI 生成</span></div>
+<div class="section-heading space"><h2>03 / 资产清单</h2>
+@if($assets->contains(fn($a)=>$a->source_kind==='generate'))
+<button class="button ghost" type="button" onclick="generateAllAssets(this,{{ $project->id }})">一键生成普通资产图</button>
+@else<span class="muted">真实上传 / AI 生成</span>@endif
+</div>
+<p id="batch-image-status" class="hint" role="status"></p>
 <p class="hint">Logo、产品型号、产品外观必须上传原始素材；普通角色、场景和非品牌道具可使用图片模型生成。素材仅在管理员登录后可查看。</p>
 @if($assets->count())
 @foreach($assets as $a)
-<div class="asset asset-media" id="asset-{{ $a->id }}">
+<div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
 <div class="asset-info">
 <span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
 <strong>{{ $a->name }}</strong>
@@ -44,7 +49,7 @@
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
 </form>
 @else
-<button class="button outline" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
 @endif
 </div>
 </div>
@@ -116,12 +121,13 @@ if(initialGeneration==='generating'){
  refreshGeneration();
  setInterval(refreshGeneration,3500);
 }
-async function generateAsset(button,project,id){
-  if(button.disabled)return;
+async function generateAsset(button,project,id,refresh=true){
+  if(button.disabled)return false;
   button.disabled=true;
   const original=button.textContent;
   const status=document.getElementById('asset-status-'+id);
   if(status)status.textContent='正在请求图片模型，可能需要几分钟…';
+  let success=false;
   try{
     const res=await fetch('/projects/'+project+'/assets/'+id+'/generate',{
       method:'POST',
@@ -130,10 +136,53 @@ async function generateAsset(button,project,id){
     });
     const data=await res.json();
     if(!res.ok)throw new Error(data.error||'HTTP '+res.status);
-    if(data.status==='ready'){window.location.reload();return;}
-    if(status)status.textContent=data.message||'图片生成已开始，请刷新页面查看状态。';
-  }catch(e){if(status)status.textContent='图片生成出错：'+e.message;}
+    if(data.status==='ready'){
+       success=true;
+       if(status)status.textContent='图片生成成功，准备显示预览';
+       if(refresh)window.location.reload();
+    }else if(status)status.textContent=data.message||'正在处理中，可继续查看状态。';
+  }catch(e){if(status)status.textContent='图片生成失败：'+e.message;}
   finally{button.disabled=false;button.textContent=original;}
+  return success;
+}
+async function generateAllAssets(button,project){
+  const buttons=Array.from(document.querySelectorAll('.asset-generate[data-has-image="0"]'));
+  if(buttons.length===0){alert('当前没有待生成的普通资产');return;}
+  if(!confirm('将顺序生成 '+buttons.length+' 个普通资产，调用图片模型可能产生 API 费用。客户产品与 Logo 不会自动生成，确认继续？'))return;
+  button.disabled=true;
+  let done=0;
+  const status=document.getElementById('batch-image-status');
+  for(const item of buttons){
+    if(status)status.textContent='正在生成 '+(done+1)+' / '+buttons.length+' 项普通资产…';
+    const ok=await generateAsset(item,project,Number(item.dataset.assetId),false);
+    if(ok)done++;
+  }
+  if(status)status.textContent='批量任务完成，成功 '+done+' / '+buttons.length+' 项。';
+  button.disabled=false;
+  if(done>0)window.location.reload();
+}
+async function pollImageAsset(id,project){
+  const card=document.getElementById('asset-'+id);
+  if(!card||card.dataset.pending!=='1')return;
+  try{
+    const r=await fetch('/projects/'+project+'/assets/'+id+'/status',{credentials:'same-origin',cache:'no-store'});
+    if(!r.ok)return;
+    const data=await r.json();
+    if(data.status==='ready'){window.location.reload();return;}
+    if(data.status==='error'){
+      card.dataset.pending='0';
+      const status=document.getElementById('asset-status-'+id);
+      if(status)status.textContent='图片生成失败：'+(data.error||'可重新尝试');
+      const button=card.querySelector('.asset-generate');
+      if(button)button.disabled=false;
+    }
+  }catch(e){}
+}
+const assetProjectId=@json($project->id);
+const pendingAssetCards=document.querySelectorAll('.asset-media[data-pending="1"]');
+if(pendingAssetCards.length){
+ const check=()=>pendingAssetCards.forEach(card=>pollImageAsset(Number(card.id.replace('asset-','')),assetProjectId));
+ check();setInterval(check,4000);
 }
 async function loadPrompt(shot,project){
  const type=document.getElementById('type-'+shot).value;
