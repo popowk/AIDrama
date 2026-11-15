@@ -8,6 +8,10 @@ use RuntimeException;
 
 class StoryboardEngine
 {
+    private string $preferredMode='auto';
+    public function setMode(string $mode):void {
+        $this->preferredMode=in_array($mode,['auto','talking','mixed'],true)?$mode:'auto';
+    }
     private function setting(string $key): ?string
     {
         return DB::table('settings')->where('key',$key)->value('value');
@@ -29,12 +33,19 @@ class StoryboardEngine
             || filter_var($m[1],FILTER_VALIDATE_IP)) {
             throw new RuntimeException('API 地址仅接受公网 HTTPS 域名（不允许 IP、内网或重定向）');
         }
-        $skills=@file_get_contents(base_path('skills/script-to-shots.md')) ?: '';
-        $prompt="请根据完整剧本生成可用于 AI 视频创作的分镜及角色、场景、道具资产清单。\n".
-          "风格：{$style}\n单镜头时长上限：{$limit}秒。动作和台词必须按发生顺序编排，镜头太长可由系统继续拆分。\n".
-          "只输出 JSON 对象，不要 Markdown：{\"shots\":[{\"title\":\"镜头标题\",\"visual\":\"具体画面和动作\",\"dialogue\":\"台词\",\"action_before\":\"开口前必须完成的动作\",\"estimated_seconds\":8}],".
-          "\"assets\":[{\"type\":\"character|scene|prop\",\"name\":\"资产名称\",\"description\":\"详细视觉设定，角色含三视图需求\",\"voice_description\":\"人物声音设定，无声资产留空\"}]}。\n".
-          "角色名与资产名必须稳定一致，不要生成未在剧本中出现的角色。\n剧本：\n".$script;
+        $skills=PromptPresets::active('script');
+        $mode=$this->preferredMode;
+        $prompt="请按完整剧本输出分镜、画面文案及人物、场景、道具清单。\n".
+          "风格：{$style}；每镜最长：{$limit}秒；创作类型偏好：{$mode}（auto 为模型识别）。\n".
+          "script_mode 只能 talking 或 mixed：talking 表示主要对镜头讲话的纯口播；mixed 表示画面文案、情节/产品展示配合口播或画外音。\n".
+          "镜头字段：title, visual, dialogue, action_before, estimated_seconds, on_screen_text, delivery。".
+          "on_screen_text 是画面中应显示的文字；delivery 为 on_camera、voiceover 或 none。\n".
+          "角色、场景和道具字段：type (character|scene|prop), name, description, voice_description, source_kind (upload|generate)。".
+          "Logo、品牌标识、真实产品和具体型号/包装等 source_kind 必须是 upload，并独立列入资产；其他可生成的人物、非品牌场景与道具为 generate。\n".
+          "仅输出 JSON：".
+          '{"script_mode":"talking|mixed","shots":[{"title":"镜头","visual":"画面动作","dialogue":"口播","action_before":"开口前动作","on_screen_text":"画面字幕或空","delivery":"on_camera|voiceover|none","estimated_seconds":8}],'.
+          '"assets":[{"type":"character|scene|prop","name":"名称","description":"外观","voice_description":"人物声音","source_kind":"upload|generate"}]}'.
+          "\n台词和动作按发生顺序，禁止添加剧本中未出现的角色，不要遗漏原稿。\n剧本：\n".$script;
         $res=Http::withToken($apiKey)->acceptJson()->asJson()
             ->withoutRedirecting()->connectTimeout(15)->timeout(145)
             ->retry(2,2000,static function($exception): bool {
@@ -59,11 +70,17 @@ class StoryboardEngine
         if (!is_array($data) || empty($data['shots']) || !is_array($data['shots'])) {
             throw new RuntimeException('AI 返回的 JSON 缺少 shots 分镜数组');
         }
-        return ['shots'=>$this->splitShots($data['shots'],$style,$limit),
-            'assets'=>$this->normalizeAssets($data['assets']??[], $style)];
+        $detected=$mode!=='auto'?$mode:(string)($data['script_mode']??'');
+        if(!in_array($detected,['talking','mixed'],true))
+            $detected=preg_match('/纯口播|面对镜头|口播稿|对镜头讲话/u',$script)&&
+                !preg_match('/画面文案|字幕展示|旁白|画外音|B-roll/u',$script)
+                ?'talking':'mixed';
+        return ['shots'=>$this->splitShots($data['shots'],$style,$limit,$detected),
+            'assets'=>$this->normalizeAssets($data['assets']??[], $style),
+            'script_mode'=>$detected];
     }
 
-    private function splitShots(array $items, string $style, int $limit): array
+    private function splitShots(array $items, string $style, int $limit,string $mode): array
     {
         $result=[];
         foreach (array_slice($items,0,120) as $item) {
@@ -73,6 +90,10 @@ class StoryboardEngine
             if ($visual==='') continue;
             $dialogue=trim((string)($item['dialogue']??''));
             $pre=trim((string)($item['action_before']??''));
+            $onScreen=mb_substr(trim((string)($item['on_screen_text']??'')),0,5000);
+            $delivery=(string)($item['delivery']??($mode==='talking'?'on_camera':'voiceover'));
+            if(!in_array($delivery,['on_camera','voiceover','none'],true))
+                $delivery=$mode==='talking'?'on_camera':'voiceover';
             $estimated=max(3,min(300,(int)($item['estimated_seconds']??6)));
             // For speaking shots reserve a little time for pre-dialogue movements.
             // 3.5 Chinese characters/sec is an editable planning estimate, not audio measurement.
@@ -86,10 +107,14 @@ class StoryboardEngine
                 $shotTitle=$title.(count($parts)>1?' · '.($i+1).'/'.count($parts):'');
                 $result[]=[
                     'title'=>$shotTitle,'visual'=>$visual.($i>0?'（承接上一镜头，人物位置和动作保持连续）':''),
-                    'dialogue'=>$part,'action_before'=>$partPre,'duration_seconds'=>$duration,
+                    'dialogue'=>$part,'action_before'=>$partPre,
+                    'on_screen_text'=>$onScreen,'delivery'=>$delivery,
+                    'duration_seconds'=>$duration,
                     'prompt'=>"画风：{$style}\n镜头：{$shotTitle}\n画面：{$visual}\n".
                         ($partPre!==''?"先完成：{$partPre}\n":'').
                         ($part!==''?"对白：{$part}\n":'').
+                        ($onScreen!==''?"画面文字：{$onScreen}\\n":'').
+                        "表达方式：{$delivery}\\n".
                         "时长：{$duration}秒。保持角色服装、场景、光线和前后镜头连续性。",
                 ];
                 if (count($result)>=500) break 2;
@@ -128,7 +153,10 @@ class StoryboardEngine
             if ($name==='' || isset($seen[$type.'|'.$name])) continue;
             $seen[$type.'|'.$name]=true;
             $desc=trim((string)($asset['description']??''));
+            $hint=(string)($asset['source_kind']??'');
+            $source=AssetOrigin::needsUpload($type,$name,$desc,$hint)?'upload':'generate';
             $result[]=['type'=>$type,'name'=>$name,'description'=>$desc,
+                'source_kind'=>$source,'image_status'=>'pending',
                 'voice_description'=>$type==='character'?(string)($asset['voice_description']??''):null,
                 'prompt'=>"{$style}，".($type==='character'?'人物三视图：正面、左侧面、背面，白色背景，完整全身，角色一致性。':($type==='scene'?'环境概念图，广角建立镜头，无人物：':'道具设计图，清晰产品细节：')).$name.'。'.$desc];
         }
