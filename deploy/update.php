@@ -65,10 +65,15 @@ try{
  mkdirSafe($root.'/releases');mkdirSafe($root.'/tmp');
  $lock=fopen($root.'/update.lock','c');
  if(!$lock||!flock($lock,LOCK_EX|LOCK_NB))stop('已有另一个更新任务');
+ if(!is_file($root.'/shared/install.lock'))stop('请先用完整 AIDrama.zip 的网页安装向导完成初始化');
+ if(!is_file($root.'/shared/.env'))stop('私有 .env 缺失，拒绝继续升级');
  if($mode==='rollback'){
   $last=trim((string)@file_get_contents($root.'/previous-release'));
   if(!preg_match('~^v\d+\.\d+\.\d+$~',$last)||!is_dir($root.'/releases/'.$last))stop('没有上个版本');
-  switchVersion($root,$last);msg("回滚代码至 {$last}，数据库不回滚");exit;
+  switchVersion($root,$last);
+  $css=$root.'/releases/'.$last.'/public/app.css';
+  if(is_file($css)){ $tmpCss=$root.'/public/app-rollback-'.bin2hex(random_bytes(4));copy($css,$tmpCss);rename($tmpCss,$root.'/public/app.css'); }
+  msg("回滚代码至 {$last}；数据库不回滚");exit;
  }
  $json=api('https://api.github.com/repos/'.REPO.'/releases/latest');
  $tag=(string)($json['tag_name']??'');if(!preg_match('~^v\d+\.\d+\.\d+$~',$tag))stop('版本标签必须为 vX.Y.Z');
@@ -89,21 +94,21 @@ try{
  if(!is_dir($dir)){
   $tmp=$root.'/tmp/stage-'.bin2hex(random_bytes(6));mkdirSafe($tmp);
   $z=new ZipArchive();if($z->open($zipFile)!==true||!$z->extractTo($tmp))stop('解压失败');$z->close();
-  foreach(['VERSION','artisan','bootstrap/app.php','public/index.php','vendor/autoload.php','.env.example'] as $f){
-   if(!is_file($tmp.'/'.$f))stop('发行包缺少 '.$f);
+  $stageRelease=$tmp.'/releases/'.$tag;
+  foreach(['VERSION','artisan','bootstrap/app.php','public/index.php','vendor/autoload.php','.env.example','public/app.css'] as $f){
+   if(!is_file($stageRelease.'/'.$f))stop('发行包缺少 '.$f);
   }
-  if(trim((string)file_get_contents($tmp.'/VERSION'))!==$tag)stop('ZIP 版本与 Release 不一致');
+  if(trim((string)file_get_contents($stageRelease.'/VERSION'))!==$tag)stop('ZIP 版本与 Release 不一致');
+  if(!is_file($tmp.'/public/index.php')||!is_file($tmp.'/bootstrap/installer.php'))
+   stop('缺少一体化安装结构');
   foreach(['app/public','app/private','framework/cache/data','framework/sessions','framework/views','logs'] as $sub)
    mkdirSafe($root.'/shared/storage/'.$sub);
-  if(!is_file($root.'/shared/.env')){
-   if(!copy($tmp.'/.env.example',$root.'/shared/.env'))stop('复制 .env.example 失败');
-   chmod($root.'/shared/.env',0600);msg('首次创建 shared/.env，请先配置 APP_KEY 和 DB');
-  }
-  if(!symlink($root.'/shared/.env',$tmp.'/.env')||!symlink($root.'/shared/storage',$tmp.'/storage'))
+  if(!symlink($root.'/shared/.env',$stageRelease.'/.env')||
+     !symlink($root.'/shared/storage',$stageRelease.'/storage'))
     stop('共享目录软链接失败');
-  // No public/storage symlink; every user asset remains private.
-  mkdirSafe($tmp.'/bootstrap/cache');
-  if(!rename($tmp,$dir))stop('版本保存失败');
+  // Never create a public/storage symlink: user assets are private.
+  mkdirSafe($stageRelease.'/bootstrap/cache');
+  if(!rename($stageRelease,$dir))stop('版本保存失败');
   msg('新版本预备目录: '.$dir);
  }
  $env=(string)file_get_contents($root.'/shared/.env');
@@ -119,6 +124,11 @@ try{
  }
  if($now)file_put_contents($root.'/previous-release',$now,LOCK_EX);
  switchVersion($root,$tag);
- msg('代码更新成功：'.$tag.'，宝塔站点根目录 '.$root.'/current/public');
- msg('首次安装请自行创建数据库并运行 php artisan migrate --force 和 php artisan aidrama:set-password');
+ // Only the stylesheet is a public static asset. Keep public/index.php untouched:
+ // it permanently routes to a locked installed version or first-run wizard.
+ $css=$dir.'/public/app.css';
+ $cssNext=$root.'/public/app-css-'.bin2hex(random_bytes(4));
+ if(!copy($css,$cssNext)||!rename($cssNext,$root.'/public/app.css'))
+   msg('代码更新成功，但 CSS 同步失败，请检查 public 目录权限');
+ msg('代码更新成功：'.$tag.'，宝塔站点根目录 '.$root.'/public');
 }catch(Throwable $e){fwrite(STDERR,'[ERROR] '.$e->getMessage()."\n");exit(1);}
