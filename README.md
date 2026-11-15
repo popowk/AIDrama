@@ -2,19 +2,19 @@
 
 **运行环境**：宝塔 OpenResty + PHP 8.4 + MySQL 5.7.44；Blade + 原生 JavaScript，无需服务器安装 Node.js、Composer、Redis 或 Python。
 
-## 简洁安装：只下载一个 ZIP
+## 全新安装：只下载一个 ZIP
 
 前往 [最新 GitHub Release](https://github.com/popowk/AIDrama/releases/latest)，**只下载 `AIDrama.zip`**。程序、PHP 依赖与图形化安装器已经整合在一起，不再有单独的 Installer.zip。
 
-1. 在宝塔新建站点，PHP 版本设为 8.4，网站目录填写 **`/www/wwwroot/AIDrama/public`**（网站运行根目录为 public，不是 AIDrama，也不是 current/public）。启用 HTTPS。
-2. 将 `AIDrama.zip` 上传到 `/www/wwwroot/AIDrama/` 并在该目录解压。解压后应存在 `/www/wwwroot/AIDrama/public/index.php` 和 `/www/wwwroot/AIDrama/releases/vX.Y.Z/`。
-3. 在宝塔创建一个**空 MySQL 数据库**及独立账号，记下其账号和密码。管理员密码不限制长度和复杂度，只要求非空且两次输入一致。
+1. 在宝塔新建站点，PHP 版本设为 8.4，网站目录填写 **`/www/wwwroot/AIDrama/public`**（网站运行根目录为 `public`，不使用 `current/public`），启用 HTTPS。**须使用全新空目录**，不要在现有 AIDrama 程序上解压。
+2. 将 `AIDrama.zip` 上传到 `/www/wwwroot/AIDrama/` 并在该目录解压，随后可删除已上传的 ZIP 文件。解压后应存在 `/www/wwwroot/AIDrama/public/index.php` 和 `/www/wwwroot/AIDrama/releases/vX.Y.Z/`。
+3. 在宝塔创建一个**全新的空 MySQL 数据库**及专用账号，记下其账号和密码。即使旧文件已经删除，**旧数据库的表仍可能存在**；不要复用旧库。管理员密码不限制长度和复杂度，只要求非空且两次输入一致。
 4. 通过 HTTPS 访问该网站。首页会显示 **AIDrama Setup** 安装向导；在宝塔文件管理器中打开 `/www/wwwroot/AIDrama/shared/setup-token.txt`，复制一次性口令到安装页面验证身份。
 5. 安装页检查 PHP 8.4、所需扩展、目录和站点根路径，填写数据库信息及管理员密码，点击一键安装。安装会使用 ZIP 中的完整代码，不会再从 GitHub 下载第二份安装包。
 
 **注意**：首次安装需启用 PHP 扩展 `fileinfo`、`curl`、`zip`、`mbstring`、`openssl`、`pdo_mysql` 等。PHP-FPM 进程应能写入 AIDrama 根目录及 `shared/` 和 `releases/`；宝塔 PHP 防跨站配置要允许站点 PHP 访问整个 AIDrama 目录。数据库建议限制为仅本机可访问。只对全新、空的 AIDrama 目录解压安装包，**不要把安装包覆盖已有站点**。
 
-## 为什么还有 releases 和 current 目录？
+## 为什么还有 releases 目录？
 
 对外的网站运行根目录始终是：
 
@@ -53,11 +53,11 @@ location / {
 
 如宝塔已配置 Laravel 相同规则，不要重复添加。在网站根目录和 HTTPS 设置正确前，不要开放安装表单。
 
-## 遇到旧版本 symlink 安装失败如何恢复
+## 全新安装保护机制
 
-如果上一版安装过程中显示 `Call to undefined function symlink()`，**不要删除 `shared/`、数据库或已有资产**。下载新版完整 `AIDrama.zip`，先备份现有 AIDrama 目录，再通过宝塔解压覆盖程序文件，保留原有 `shared/`。新安装器会选用最新的 `releases/vX.Y.Z`，识别上次未完成的 `shared/.env`，先备份并保留原 APP_KEY，再继续配置。
+首次安装只允许空网站配置与空数据库：网页向导会在私有目录生成一次性口令，并自动生成全新的应用加密密钥、创建数据库表、保存管理员密码哈希和锁定安装入口。如果检测到旧 `.env`、管理员数据、安装锁或旧数据库表，会直接停止，而**不会擅自删除任何文件或数据库**。
 
-如果安装器检测到已有项目数据、管理员哈希或安装完成标记，会拒绝重复初始化，防止覆盖现有数据；这时不要清空数据库，需先检查具体残留状态。实际安装时必须让 PHP 用户可读写 `shared/`。
+安装器、版本号标记、系统日志、数据库连接信息及生成素材都保存在 `public/` 之外；PHP 禁用 `symlink()` 仍然能够安装。不要关闭宝塔的相关安全限制来解决兼容性问题。
 
 ## 更新方式
 
@@ -75,4 +75,4 @@ su -s /bin/sh www -c '/www/server/php/84/bin/php /www/wwwroot/AIDrama/deploy/upd
 - 尚未实现：实际角色三视图图片生成、声音参考和 Voice ID 管理、完整 Drama Skills 导入与执行、真实视频生成、任务队列。
 - 创作流程参考 [雪风 AI 短剧工坊](https://github.com/oiuv/ai-short-drama)，技能方向参考 [Drama Skills](https://github.com/zenstory-ai/drama-skills)，当前 AIDrama 是独立 PHP 实现。
 
-CI 对源码、Laravel、MySQL 5.7 迁移及部分安装页面进行验证，不代表已经在你实际的宝塔/OpenResty 服务器上测试。首装请使用新建空数据库。MySQL 5.7 已停止常规安全维护，建议后续升级。
+CI 对源码、Laravel、MySQL 5.7 迁移、单 ZIP 解压后全新安装及登录进行验证，不代表已经在你实际的宝塔/OpenResty 服务器上测试。首装请使用新建空数据库。MySQL 5.7 已停止常规安全维护，建议后续升级。
