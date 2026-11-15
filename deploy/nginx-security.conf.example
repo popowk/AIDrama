@@ -1,5 +1,5 @@
 # Baota / OpenResty reference rules.
-# Only expose /www/wwwroot/AIDrama/current/public as document root.
+# Only expose /www/wwwroot/AIDrama/public as document root.
 # Add inside server {} after checking conflicts with Baota PHP includes.
 autoindex off;
 location ~ /\.(?!well-known/) { return 404; }
