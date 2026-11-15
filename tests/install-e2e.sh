@@ -102,8 +102,14 @@ ENTRY="$SMOKE/releases/$RECOVERY_VERSION/public/index.php"
 cp "$ENTRY" "$RUNNER_TEMP/original-release-entry.php"
 printf '<?php throw new RuntimeException("CI startup failure");\n' > "$ENTRY"
 HTTP_CODE="$(curl -sS -o "$RUNNER_TEMP/startup-error.html" -w '%{http_code}' http://127.0.0.1:18868/login)"
-test "$HTTP_CODE" = "500"
-grep -q 'AIDrama 启动失败' "$RUNNER_TEMP/startup-error.html"
-test -s "$SMOKE/shared/storage/logs/bootstrap-error.log"
+echo "Simulated PHP startup response HTTP $HTTP_CODE"
+if ! test "$HTTP_CODE" = "500" ||
+   ! grep -q 'AIDrama 启动失败' "$RUNNER_TEMP/startup-error.html" ||
+   ! test -s "$SMOKE/shared/storage/logs/bootstrap-error.log"; then
+  echo 'Startup error response test failed; diagnostics follow:'
+  head -c 900 "$RUNNER_TEMP/startup-error.html" || true
+  tail -25 "$RUNNER_TEMP/setup-server.log" || true
+  exit 1
+fi
 cp "$RUNNER_TEMP/original-release-entry.php" "$ENTRY"
 echo "E2E install, stale-release recovery and safe PHP startup error diagnostics passed"
