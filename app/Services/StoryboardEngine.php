@@ -15,14 +15,14 @@ class StoryboardEngine
 
     public function generate(string $script, string $style, int $limit): array
     {
-        $apiKey=$this->setting('ai.api_key');
-        if (!$apiKey) throw new RuntimeException('请先在「模型设置」保存 API Key');
+        $apiKey=$this->setting('ai.text.api_key') ?: $this->setting('ai.api_key');
+        if (!$apiKey) throw new RuntimeException('请先在「模型设置 → 文本模型」保存 API Key');
         try { $apiKey=Crypt::decryptString($apiKey); }
-        catch (\Throwable $e) { throw new RuntimeException('API Key 无法解密，请确认 APP_KEY 未变更并重新保存密钥'); }
+        catch (\Throwable $e) { throw new RuntimeException('文本 API Key 无法解密，请检查 APP_KEY 并重新保存密钥'); }
 
-        $base=rtrim($this->setting('ai.api_base') ?: 'https://api.openai.com/v1','/');
-        $model=trim($this->setting('ai.model') ?: '');
-        if ($model==='') throw new RuntimeException('请先填写模型名称');
+        $base=rtrim($this->setting('ai.text.api_base') ?: $this->setting('ai.api_base') ?: 'https://api.openai.com/v1','/');
+        $model=trim($this->setting('ai.text.model') ?: $this->setting('ai.model') ?: '');
+        if ($model==='') throw new RuntimeException('请先填写文本模型名称');
         // Private-network and redirect protection; the admin may configure public HTTPS OpenAI-compatible APIs.
         if (!preg_match('~^https://([a-zA-Z0-9.-]+)(?::443)?(?:/[a-zA-Z0-9._/-]*)?$~D',$base,$m)
             || strtolower($m[1])==='localhost' || str_ends_with(strtolower($m[1]),'.local')
@@ -36,7 +36,12 @@ class StoryboardEngine
           "\"assets\":[{\"type\":\"character|scene|prop\",\"name\":\"资产名称\",\"description\":\"详细视觉设定，角色含三视图需求\",\"voice_description\":\"人物声音设定，无声资产留空\"}]}。\n".
           "角色名与资产名必须稳定一致，不要生成未在剧本中出现的角色。\n剧本：\n".$script;
         $res=Http::withToken($apiKey)->acceptJson()->asJson()
-            ->withoutRedirecting()->connectTimeout(12)->timeout(115)
+            ->withoutRedirecting()->connectTimeout(15)->timeout(145)
+            ->retry(2,2000,static function($exception): bool {
+                return $exception instanceof \Illuminate\Http\Client\ConnectionException ||
+                    ($exception instanceof \Illuminate\Http\Client\RequestException &&
+                     in_array($exception->response->status(),[408,429,500,502,503,504],true));
+            },throw:false)
             ->post($base.'/chat/completions',[
                 'model'=>$model,
                 'messages'=>[['role'=>'system','content'=>$skills],['role'=>'user','content'=>$prompt]],
