@@ -98,6 +98,27 @@ su -s /bin/sh www -c '/www/server/php/84/bin/php /实际网站目录/deploy/upda
 
 更新器从 GitHub 最新 Release 下载完整包，只提取内部的新版本程序，不会覆盖 `public/index.php`、`shared/.env`、`shared/storage`、数据库或项目素材。更新使用 SHA256 校验、版本隔离及私有版本号标记，不需要软链接或 shell exec；升级涉及数据库迁移时自动停止，需要人工备份和审核。回滚仅恢复代码，不会自动回退数据库。
 
+## 页面空白或 HTTP 500：如何诊断
+
+首先在宝塔备份网站目录及数据库；**不要删 shared/、MySQL 或正在使用的 release**。新版本的 `public/index.php` 在捕获 PHP 启动异常时会返回带错误编号的 HTTP 500 页面，并将详情写入私有 `shared/storage/logs/bootstrap-error.log`；不是所有 Nginx、PHP-FPM 或 Laravel 捕获的错误都能由此处理。
+
+在宝塔终端使用与你网站相同的 PHP 8.4 路径，执行以下只读检查。`<实际站点目录>` 替换为真实目录，脚本不会输出 API Key 或数据库密码。
+
+```bash
+/www/server/php/84/bin/php <实际站点目录>/deploy/diagnose.php
+```
+
+接着检查：
+
+```bash
+tail -n 60 <实际站点目录>/shared/storage/logs/bootstrap-error.log
+tail -n 60 <实际站点目录>/shared/storage/logs/laravel.log
+tail -n 60 /www/wwwlogs/<域名>.error.log
+```
+
+诊断会输出版本指针是否有效、release 文件完整性、共享缓存目录写入权限、Laravel 启动与 MySQL 连接是否成功、迁移缺失数量等。**CLI 与 PHP-FPM 可能加载不同的 php.ini 和 open_basedir**；命令行通过不代表网页一定正常。频繁覆盖版本后，可在宝塔中重启 PHP 8.4 服务以清理旧的 OPcache / PHP-FPM 进程，不要仅靠清空浏览器缓存。
+
+如果诊断显示迁移未执行，先备份数据库，再从后台补齐迁移（或使用当前正式版的 `php artisan migrate --force` 并确认配置从 shared 加载），不要直接手动删除表或修改 migration 记录。若网站入口已经无法使用，先将最新 ZIP 解压到原站点目录覆盖 `public/index.php` 和完整版本代码，保留 shared/，然后重启 PHP-FPM 并查看上述日志。
 ## 目前功能与限制
 
 - 已实现：单机管理员登录、文本/图片两类独立模型配置、后台检查更新与一键更新、MySQL 分镜生成任务与状态轮询、剧本项目管理、15/30 秒单镜限制、AI 分镜与台词时长估算、人物/场景/道具文本清单、镜头编辑与初版可灵/Seedance/Stable Diffusion 提示词、项目 JSON 导出。
