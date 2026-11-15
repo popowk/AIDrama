@@ -98,9 +98,14 @@ curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates > "$RUNNER_TEMP/updates-af
 grep -F ">${RECOVERY_VERSION}</strong>" "$RUNNER_TEMP/updates-after-recovery.html"
 # Force a PHP startup Error and verify a visible safe diagnostic response.
 # Never leave broken code in the test release after the assertion.
-ENTRY="$SMOKE/releases/$RECOVERY_VERSION/public/index.php"
-cp "$ENTRY" "$RUNNER_TEMP/original-release-entry.php"
+# Use a new release path that PHP has never executed, avoiding a cached
+# opcache copy of the previously visited v99 entry point.
+FAULT_VERSION="v98.98.98"
+cp -a "$SMOKE/releases/$RECOVERY_VERSION" "$SMOKE/releases/$FAULT_VERSION"
+printf '%s\n' "$FAULT_VERSION" > "$SMOKE/releases/$FAULT_VERSION/VERSION"
+ENTRY="$SMOKE/releases/$FAULT_VERSION/public/index.php"
 printf '<?php throw new RuntimeException("CI startup failure");\n' > "$ENTRY"
+printf '%s\n' "$FAULT_VERSION" > "$SMOKE/shared/active-version"
 HTTP_CODE="$(curl -sS -o "$RUNNER_TEMP/startup-error.html" -w '%{http_code}' http://127.0.0.1:18868/login)"
 echo "Simulated PHP startup response HTTP $HTTP_CODE"
 if ! test "$HTTP_CODE" = "500" ||
@@ -111,5 +116,5 @@ if ! test "$HTTP_CODE" = "500" ||
   tail -25 "$RUNNER_TEMP/setup-server.log" || true
   exit 1
 fi
-cp "$RUNNER_TEMP/original-release-entry.php" "$ENTRY"
+printf '%s\n' "$RECOVERY_VERSION" > "$SMOKE/shared/active-version"
 echo "E2E install, stale-release recovery and safe PHP startup error diagnostics passed"
