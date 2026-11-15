@@ -277,6 +277,8 @@ class ReleaseManager
                 @unlink($entryNext);
                 throw new RuntimeException('无法更新网站入口，请检查 public/index.php 写入权限');
             }
+            if(function_exists('opcache_invalidate'))
+                @opcache_invalidate($root.'/public/index.php',true);
             $marker=$root.'/shared/active-version';
             $next=$root.'/shared/active-version.new-'.bin2hex(random_bytes(4));
             if(file_put_contents($next,$tag."\n",LOCK_EX)===false)
