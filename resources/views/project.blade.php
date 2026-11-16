@@ -1,7 +1,7 @@
 @extends('layout')
 @section('title',$project->name)
 @section('content')
-<div class="headline"><div><a class="breadcrumb" href="{{ route('home') }}">← 返回项目</a><h1>{{ $project->name }}</h1><p class="muted">{{ $project->style }} · 每镜最长 {{ $project->shot_limit }} 秒 · {{ ['draft'=>'待生成','generating'=>'生成中','ready'=>'已生成','error'=>'上次生成失败'][$project->status]??$project->status }}
+<div class="headline"><div><a class="breadcrumb" href="{{ route('home') }}">← 返回项目</a><h1>{{ $project->name }}</h1><p class="muted">{{ $project->style }} · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }} · 每镜最长 {{ $project->shot_limit }} 秒 · {{ ['draft'=>'待生成','generating'=>'生成中','ready'=>'已生成','error'=>'上次生成失败'][$project->status]??$project->status }}
 @if($project->detected_mode) · 已识别：{{ $project->detected_mode==='talking'?'纯口播':'文案＋口播' }}@endif</p></div><a class="button outline" href="{{ route('project.export',$project->id) }}">导出项目 JSON</a></div>
 <div class="project-grid">
 <section class="panel"><div class="section-heading"><h2>01 / 剧本和生成参数</h2></div>
@@ -9,6 +9,27 @@
 <label>项目名称<input name="name" value="{{ $project->name }}" maxlength="191" required></label>
 <div class="inline-fields"><label>画风<input name="style" value="{{ $project->style }}" maxlength="191" required></label>
 <label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label></div>
+<div class="inline-fields">
+<label>项目画面比例<select name="frame_ratio">
+<option value="landscape" @selected(($project->frame_ratio??'landscape')==='landscape')>横屏 16:9</option>
+<option value="portrait" @selected(($project->frame_ratio??'landscape')==='portrait')>竖屏 9:16</option>
+</select><small class="muted">生图与后续视频提示词默认遵守；已生成的原图不裁切</small></label>
+<label>参考风格库<select name="style_preset">
+@foreach($stylePresets as $key=>$preset)
+<option value="{{ $key }}" @selected(($project->style_preset??'custom')===$key)>{{ $preset['label'] }}</option>
+@endforeach
+</select><small class="muted">附加详细的构图、光影、色彩、材质规则</small></label>
+</div>
+<details class="creative-skill-picker"><summary>技能库（已选 {{ count($selectedSkills) }} 项 · 可组合）</summary>
+<input type="hidden" name="skills_present" value="1">
+<div class="creative-skill-options">
+@foreach($creativeSkills as $key=>$skill)
+<label class="creative-skill-option">
+<input type="checkbox" name="skill_keys[]" value="{{ $key }}" @checked(in_array($key,$selectedSkills,true))>
+<span><strong>{{ $skill['label'] }}</strong><small>{{ $skill['description'] }}</small></span>
+</label>
+@endforeach
+</div></details>
 <label>创作形式<select name="script_mode"><option value="auto" @selected($project->script_mode==='auto')>自动识别纯口播 / 文案＋口播</option><option value="talking" @selected($project->script_mode==='talking')>纯口播（角色面对镜头说话）</option><option value="mixed" @selected($project->script_mode==='mixed')>文案＋口播（画面展示、字幕与旁白）</option></select></label>
 <label>完整剧本<textarea name="script" rows="11" maxlength="100000" required>{{ $project->script }}</textarea></label>
 <div class="button-row"><button class="button outline" type="submit">保存剧本</button></div></form>
@@ -44,6 +65,17 @@
 @if($a->image_status==='error'&&$a->image_error)<p class="muted small">{{ $a->image_error }}</p>@endif
 <details><summary>查看资产生图提示词</summary><textarea rows="3" readonly>{{ $a->prompt }}</textarea></details>
 <div class="asset-buttons">
+<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form">
+@csrf
+<label class="small">该资产画幅（覆盖项目默认）
+<select name="frame_ratio" @disabled($a->image_status==='generating')>
+<option value="inherit" @selected(($a->frame_ratio??'inherit')==='inherit')>沿用项目默认 · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }}</option>
+<option value="landscape" @selected(($a->frame_ratio??'inherit')==='landscape')>横屏 16:9</option>
+<option value="portrait" @selected(($a->frame_ratio??'inherit')==='portrait')>竖屏 9:16</option>
+<option value="square" @selected(($a->frame_ratio??'inherit')==='square')>方形 1:1</option>
+</select></label>
+<button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
+</form>
 @if($a->source_kind==='upload')
 <form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
@@ -57,12 +89,12 @@
 <div class="asset-preview">
 @if($a->file_path)
 <button type="button" class="asset-preview-trigger"
-    data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}"
+    data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}"
     data-preview-name="{{ $a->name }}"
     data-download-url="{{ route('asset.download',[$project->id,$a->id]) }}"
     onclick="openAssetPreview(this)"
     aria-label="预览{{ $a->name }}参考图">
-    <img src="{{ route('asset.thumbnail',[$project->id,$a->id]) }}" alt="{{ $a->name }}缩略图" loading="lazy" decoding="async" width="176" height="132"
+    <img src="{{ route('asset.thumbnail',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}" alt="{{ $a->name }}缩略图" loading="lazy" decoding="async" width="176" height="132"
          style="display:block;width:100%;max-width:176px;height:132px;max-height:132px;object-fit:contain;">
     <span class="asset-preview-label">点击放大预览</span>
 </button>
@@ -78,13 +110,14 @@
 <dialog id="asset-lightbox" class="asset-lightbox" aria-label="资产图片大图预览">
     <div class="asset-lightbox-head">
         <strong id="asset-lightbox-title">参考图预览</strong>
-        <button type="button" class="button ghost" onclick="closeAssetPreview()" aria-label="关闭图片预览">关闭 ×</button>
+        <div class="asset-lightbox-tools"><button type="button" id="asset-lightbox-mode" class="button ghost" onclick="toggleAssetPreviewMode()">100% 原始尺寸</button>
+<button type="button" class="button ghost" onclick="closeAssetPreview()" aria-label="关闭图片预览">关闭 ×</button></div>
     </div>
     <div class="asset-lightbox-stage">
         <img id="asset-lightbox-image" alt="" decoding="async" />
     </div>
     <div class="asset-lightbox-actions">
-        <span class="muted small">点击遮罩或按 Esc 关闭 · 原图保留完整质量</span>
+        <span class="muted small">默认完整显示 · 可切换 100% 原始尺寸 · 按 Esc 关闭</span>
         <a id="asset-lightbox-download" class="button outline" href="#">↓ 下载原图（资产名称）</a>
     </div>
 </dialog>
@@ -154,12 +187,23 @@ function openAssetPreview(button){
   const url=button.dataset.previewSrc;
   if(!dialog||!image||!title||!download||!url)return;
   const name=button.dataset.previewName||'参考图';
+  dialog.dataset.mode='fit';
+  const modeButton=document.getElementById('asset-lightbox-mode');
+  if(modeButton)modeButton.textContent='100% 原始尺寸';
   title.textContent=name+' · 原图预览';
   image.alt=name+'参考图';
   image.src=url;
   download.href=button.dataset.downloadUrl||url;
   if(typeof dialog.showModal==='function')dialog.showModal();
   else window.open(url,'_blank','noopener');
+}
+function toggleAssetPreviewMode(){
+  const dialog=document.getElementById('asset-lightbox');
+  const modeButton=document.getElementById('asset-lightbox-mode');
+  if(!dialog)return;
+  const actual=dialog.dataset.mode!=='actual';
+  dialog.dataset.mode=actual?'actual':'fit';
+  if(modeButton)modeButton.textContent=actual?'适合窗口（完整显示）':'100% 原始尺寸';
 }
 function closeAssetPreview(){
   document.getElementById('asset-lightbox')?.close();
