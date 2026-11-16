@@ -57,7 +57,15 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/settings',[StudioController::class,'saveSettings'])->name('settings.save');
     Route::post('/settings/prompts',[StudioController::class,'savePromptSettings'])->name('settings.prompts.save');
     Route::post('/settings/prompts/{kind}/reset',[StudioController::class,'resetPromptSettings'])
-        ->where('kind','script|image|kling|seedance')->name('settings.prompts.reset');
+        ->where('kind','script|image|image_character|image_scene|image_prop|kling|seedance')->name('settings.prompts.reset');
+    Route::post('/projects/{id}/assets/{asset}/archive',[AssetController::class,'archive'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.archive');
+    Route::post('/projects/{id}/assets/{asset}/restore',[AssetController::class,'restore'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.restore');
+    Route::post('/projects/{id}/assets/{asset}/prompt',[AssetController::class,'savePrompt'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.prompt.save');
+    Route::post('/projects/{id}/assets/{asset}/prompt/reset',[AssetController::class,'resetPrompt'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.prompt.reset');
     Route::post('/projects/{id}/assets/{asset}/frame-ratio',[AssetController::class,'frameRatio'])
         ->whereNumber('id')->whereNumber('asset')->name('asset.frameRatio');
     Route::post('/projects/{id}/assets/{asset}/upload',[AssetController::class,'upload'])
