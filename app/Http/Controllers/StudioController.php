@@ -506,11 +506,20 @@ class StudioController
             'custom'=>'nullable|string|max:25000',
         ]);
         PromptPresets::save($v['kind'],$v['mode'],$v['reference'],$v['custom']??'');
-        return back()->with('ok','已保存「'.PromptPresets::LABELS[$v['kind']].'」提示词，后续生成会使用当前选定模式');
+        $message='已保存「'.PromptPresets::LABELS[$v['kind']].'」提示词，后续生成会使用当前选定模式';
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'mode'=>$v['mode'],'kind'=>$v['kind'],
+        ]);
+        return back()->with('ok',$message);
     }
     public function resetPromptSettings(string $kind) {
         PromptPresets::reset($kind);
-        return back()->with('ok','已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词');
+        $message='已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词';
+        if(request()->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'kind'=>$kind,
+            'mode'=>'reference','reference'=>PromptPresets::reference($kind),
+        ]);
+        return back()->with('ok',$message);
     }
     public function detectModels(Request $request,\App\Services\ModelDiscovery $discovery)
     {
@@ -544,7 +553,11 @@ class StudioController
            isset($parts['query'])||isset($parts['fragment'])||
            $host==='localhost'||str_ends_with($host,'.local')||
            filter_var($host,FILTER_VALIDATE_IP))
-            return back()->withErrors(['api_base'=>'请填写可信的公网 HTTPS API 地址，不能使用 IP、localhost、账号或 URL 参数']);
+        {
+            $message='请填写可信的公网 HTTPS API 地址，不能使用 IP、localhost、账号或 URL 参数';
+            if($request->expectsJson())return response()->json(['ok'=>false,'message'=>$message],422);
+            return back()->withErrors(['api_base'=>$message]);
+        }
         $type=$v['kind'];
         $prefix='ai.'.$type.'.';
         DB::transaction(function() use ($v,$prefix) {
@@ -559,7 +572,12 @@ class StudioController
                     'value'=>Crypt::encryptString($v['api_key']),'updated_at'=>now(),
                 ]);
         });
-        return back()->with('ok',($type==='text'?'文本':'图片').'模型配置已保存。API Key 仅存储加密值，未输入新密钥则保留旧值。');
+        $message=($type==='text'?'文本':'图片').'模型配置已保存。API Key 仅存储加密值，未输入新密钥则保留旧值。';
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'kind'=>$type,
+            'key_updated'=>filled($v['api_key']??null),
+        ]);
+        return back()->with('ok',$message);
     }
     public function export(int $id) {
         $project=$this->project($id);
