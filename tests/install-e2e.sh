@@ -74,8 +74,19 @@ fi
 # with "Target class [view] does not exist" when config:cache was present.
 ACTIVE="$(cat "$SMOKE/shared/active-version")"
 APP_DIR="$SMOKE/releases/$ACTIVE"
+PRIVATE_BOOTSTRAP="$SMOKE/shared/storage/framework/cache/bootstrap/$ACTIVE"
+# ZIPs exclude bootstrap/cache entirely: release code is non-writable on
+# production hosts, but a page must still boot using private shared cache.
+test ! -d "$APP_DIR/bootstrap/cache"
+test -d "$PRIVATE_BOOTSTRAP"
+chmod -R a-w "$APP_DIR/bootstrap"
+curl -fsS -b "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-readonly-release.html"
+grep -q 'AIDrama' "$RUNNER_TEMP/login-readonly-release.html"
+test -s "$PRIVATE_BOOTSTRAP/packages.php"
+test -s "$PRIVATE_BOOTSTRAP/services.php"
+echo "Read-only release with no bootstrap/cache booted successfully"
 (cd "$APP_DIR" && php artisan config:cache)
-php -r '$cfg=require $argv[1];$ps=$cfg["app"]["providers"]??[];if(!in_array(\Illuminate\View\ViewServiceProvider::class,$ps,true)||!in_array(\Illuminate\Session\SessionServiceProvider::class,$ps,true)){fwrite(STDERR,"Missing Laravel default providers in config cache\n");exit(1);}' "$APP_DIR/bootstrap/cache/config.php"
+php -r '$cfg=require $argv[1];$ps=$cfg["app"]["providers"]??[];if(!in_array(\Illuminate\View\ViewServiceProvider::class,$ps,true)||!in_array(\Illuminate\Session\SessionServiceProvider::class,$ps,true)){fwrite(STDERR,"Missing Laravel default providers in config cache\n");exit(1);}' "$PRIVATE_BOOTSTRAP/config.php"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-with-cached-config.html"
 grep -q 'AIDrama' "$RUNNER_TEMP/login-with-cached-config.html"
 (cd "$APP_DIR" && php artisan config:clear)
@@ -135,11 +146,11 @@ cp -a "$APP_DIR" "$SMOKE/releases/$LEGACY_CACHE_VERSION"
 printf '%s\n' "$LEGACY_CACHE_VERSION" > "$SMOKE/releases/$LEGACY_CACHE_VERSION/VERSION"
 LEGACY_DIR="$SMOKE/releases/$LEGACY_CACHE_VERSION"
 (cd "$LEGACY_DIR" && php artisan config:cache)
-php -r '$f=$argv[1];$config=require $f;unset($config["app"]["providers"]);file_put_contents($f,"<?php return ".var_export($config,true).";\n");' "$LEGACY_DIR/bootstrap/cache/config.php"
+php -r '$f=$argv[1];$config=require $f;unset($config["app"]["providers"]);file_put_contents($f,"<?php return ".var_export($config,true).";\n");' "$SMOKE/shared/storage/framework/cache/bootstrap/$LEGACY_CACHE_VERSION/config.php"
 printf '%s\n' "$LEGACY_CACHE_VERSION" > "$SMOKE/shared/active-version"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/legacy-cache-recovery.html"
 grep -q 'AIDrama' "$RUNNER_TEMP/legacy-cache-recovery.html"
-test ! -f "$LEGACY_DIR/bootstrap/cache/config.php"
+test ! -f "$SMOKE/shared/storage/framework/cache/bootstrap/$LEGACY_CACHE_VERSION/config.php"
 printf '%s\n' "$ACTIVE" > "$SMOKE/shared/active-version"
 # The newest unapproved release must not bypass the active version marker.
 OLD_VERSION="$(cat "$SMOKE/shared/active-version")"
