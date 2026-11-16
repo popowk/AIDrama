@@ -244,13 +244,15 @@ foreach([
     'http://api.openai.com:3000/images/2026/11/16/recovered.png',
     'http://localhost:3000/images/2026/11/16/recovered.png',
     'http://127.0.0.1:3000/images/2026/11/16/recovered.png',
+    'http://172.17.0.2:3000/images/2026/11/16/recovered.png',
+    'http://192.168.2.22:3000/images/2026/11/16/recovered.png',
     $normalizedTarget,
 ] as $format){
     $image=$adapter->image(['results'=>[['url'=>$format]]]);
     assertMedia($image['extension']==='png'&&$image['data']===$pngBytes,
         'known chatgpt2api published image URL variant must resolve to trusted HTTPS host');
 }
-assertMedia($normalizedHits===7,'all known origin variants fetched only from trusted HTTPS API');
+assertMedia($normalizedHits===9,'all known origin variants fetched only from trusted HTTPS API');
 
 // Unknown public domains, dangerous schemes, path traversal and arbitrary
 // paths must be rejected BEFORE any HTTP request is made.
