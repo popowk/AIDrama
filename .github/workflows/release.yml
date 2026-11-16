@@ -51,6 +51,7 @@ jobs:
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php artisan migrate --force
           rm -f database/database.sqlite
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php artisan migrate --force
+          php tests/storyboard-table-smoke.php
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/storyboard-async-smoke.php
           # Simulate MySQL 5.7's nontransactional DDL: previous upgrade
           # added most columns but crashed before recording the migration.
