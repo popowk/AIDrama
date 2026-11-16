@@ -5,7 +5,7 @@
 @if($project->detected_mode) · 已识别：{{ $project->detected_mode==='talking'?'纯口播':'文案＋口播' }}@endif</p></div><a class="button outline" href="{{ route('project.export',$project->id) }}">导出项目 JSON</a></div>
 <div class="project-grid">
 <section class="panel" id="script-editor"><div class="section-heading"><h2>01 / 剧本和生成参数</h2></div>
-<form method="post" action="{{ route('project.update',$project->id) }}" class="form-stack">@csrf
+<form method="post" id="project-save-form" action="{{ route('project.update',$project->id) }}" class="form-stack">@csrf
 <label>项目名称<input name="name" value="{{ $project->name }}" maxlength="191" required></label>
 <div class="inline-fields">
 <label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label>
@@ -43,21 +43,23 @@
 </select></label>
 <div id="project-storyboard-pane" @if(($project->input_kind??'script')!=='storyboard') hidden @endif>
 <label>原始分镜表格<textarea name="storyboard_source" id="project-storyboard-source" rows="11" maxlength="100000" placeholder="从 Excel 直接粘贴；或粘贴 Markdown 表格，列名如：镜号 | 画面 | 台词 | 画面字幕">{{ $project->storyboard_source??'' }}</textarea></label>
-<p class="hint">支持 Excel/表格软件复制的制表符表格、Markdown 和 CSV；默认识别镜号、画面、台词、画面字幕、时长，单次最多 40 镜。保存后可逐镜扩写，原始表格不会被覆盖。</p>
+<p class="hint">支持 Excel、Markdown、CSV，以及从网页复制后按“一行一个单元格”展开的表格。自动按镜号组合镜头，最多 40 镜。保存后可逐镜扩写，原始表格不会被覆盖。</p>
 <div id="storyboard-preview" class="storyboard-preview" aria-live="polite"></div>
 </div>
 <div id="project-script-pane" @if(($project->input_kind??'script')==='storyboard' && trim((string)$project->script)==='') hidden @endif>
 <label><span id="project-script-label">{{ ($project->input_kind??'script')==='storyboard'?'扩写后的完整剧本（可编辑）':'完整剧本' }}</span>
 <textarea name="script" id="project-script-source" rows="11" maxlength="100000" @required(($project->input_kind??'script')!=='storyboard')>{{ $project->script }}</textarea></label>
 </div>
-<div class="button-row"><button class="button outline" type="submit">保存剧本</button></div></form>
+<div class="button-row"><button class="button outline" type="submit" id="save-project-script-btn">保存剧本</button></div>
+<p id="project-save-status" class="hint" role="status" aria-live="polite"></p>
+</form>
 <form method="post" action="{{ route('project.expand',$project->id) }}" id="project-expand-form" @if(($project->input_kind??'script')!=='storyboard') hidden @endif>@csrf
 <button class="button primary wide" type="submit" id="expand-storyboard-btn" @disabled($project->status==='generating'||empty($project->storyboard_source))>✦ AI 按分镜逐段生成剧本</button>
 <p class="hint" id="expand-help">先保存粘贴的分镜表格，再点击这里。逐镜扩写不会删除已有分镜或资产。</p>
 @if($project->storyboard_dirty??false)<p class="hint">原始表格已更改，旧剧本和素材已保留。请重新扩写，之后才能用新内容生成分镜。</p>@endif
 </form>
 <form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
-<button class="button primary wide" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
+<button class="button primary wide" id="generate-shots-btn" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
 <div id="generation-state" class="task-state" data-status="{{ $project->status }}">
   @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
   @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
@@ -191,7 +193,19 @@ if(projectStyleSelector){
 const inputKind=document.getElementById('project-input-kind');
 const storyboardSource=document.getElementById('project-storyboard-source');
 const scriptSource=document.getElementById('project-script-source');
-const savedStoryboard=@json((string)($project->storyboard_source??''));
+let savedStoryboard=@json((string)($project->storyboard_source??''));
+let storyboardDirty=@json((bool)($project->storyboard_dirty??false));
+let hasSavedScript=@json(trim((string)$project->script)!=='');
+const saveForm=document.getElementById('project-save-form');
+const saveButton=document.getElementById('save-project-script-btn');
+const saveStatus=document.getElementById('project-save-status');
+const generationButton=document.getElementById('generate-shots-btn');
+function syncGenerationButton(){
+  if(generationButton){
+    generationButton.disabled=@json($project->status==='generating')||!hasSavedScript||
+       (inputKind?.value==='storyboard'&&(storyboardDirty||storyboardSource?.value!==savedStoryboard));
+  }
+}
 function showSourceMode(){
  if(!inputKind)return;
  const storyboard=inputKind.value==='storyboard';
@@ -202,6 +216,7 @@ function showSourceMode(){
  storyboardSource.required=storyboard;
  document.getElementById('project-script-label').textContent=storyboard?'扩写后的完整剧本（可编辑）':'完整剧本';
  syncExpandButton();
+ syncGenerationButton();
 }
 function syncExpandButton(){
  const button=document.getElementById('expand-storyboard-btn');
@@ -209,34 +224,96 @@ function syncExpandButton(){
  if(!button||!storyboardSource)return;
  const changed=storyboardSource.value!==savedStoryboard;
  button.disabled=@json($project->status==='generating')||!storyboardSource.value.trim()||changed;
- help.textContent=changed?'表格内容已修改，请先点击“保存剧本”保存原始分镜，再执行逐镜扩写。':'逐镜扩写不会删除当前已有的分镜或资产。';
+ help.textContent=changed?'表格内容已修改，请先点击“保存剧本”，待出现“已保存”后即可扩写。':'原始分镜已保存，可点击扩写；不会删除已有分镜或资产。';
+ syncGenerationButton();
 }
+let previewTimer=0,previewRequest=0;
 function showStoryboardPreview(){
+ clearTimeout(previewTimer);
  const preview=document.getElementById('storyboard-preview');
- if(!preview||!storyboardSource)return;
- const src=storyboardSource.value.trim();preview.replaceChildren();
- if(!src)return;
- const lines=src.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
- const separator=lines[0]?.includes('\t')?'\t':(lines[0]?.includes('|')?'|':',');
- const rows=lines.map(v=>{
-   const clean=separator==='|'?v.replace(/^\s*\||\|\s*$/g,''):v;
-   return clean.split(separator).map(c=>c.trim());
- }).filter(c=>c.some(v=>v)&&!c.every(v=>/^:?-{3,}:?$/.test(v)));
- const label=document.createElement('p');label.className='hint';
- label.textContent='表格预览 · '+Math.max(0,rows.length-1)+' 行内容（以下仅显示前 5 行，保存时会由服务端完整校验）';
- preview.appendChild(label);
- const table=document.createElement('table');table.className='storyboard-mini-table';
- rows.slice(0,6).forEach((cells,i)=>{
-   const tr=document.createElement('tr');
-   cells.slice(0,6).forEach(v=>{
-     const cell=document.createElement(i===0?'th':'td');
-     cell.textContent=v;tr.appendChild(cell);
-   });table.appendChild(tr);
- });
- preview.appendChild(table);
+ const source=storyboardSource?.value.trim()||'';
+ if(!preview)return;
+ preview.replaceChildren();
+ if(!source)return;
+ const note=document.createElement('p');
+ note.className='hint';note.textContent='正在解析分镜表格…';
+ preview.appendChild(note);
+ const requestNo=++previewRequest;
+ previewTimer=setTimeout(async()=>{
+   try{
+     const response=await fetch(@json(route('project.storyboard.preview',$project->id)),{
+       method:'POST',credentials:'same-origin',
+       headers:{'Accept':'application/json','Content-Type':'application/json',
+                'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},
+       body:JSON.stringify({storyboard_source:source})
+     });
+     const body=await response.json();
+     if(requestNo!==previewRequest)return;
+     preview.replaceChildren();
+     if(!response.ok){
+       const msg=body?.errors?.storyboard_source?.[0]||body?.message||'表格解析失败';
+       const p=document.createElement('p');p.className='hint storyboard-preview-error';
+       p.textContent=msg;preview.appendChild(p);return;
+     }
+     const p=document.createElement('p');p.className='hint';
+     p.textContent='✓ 已识别 '+Number(body.count)+' 个分镜（显示前 5 镜），列与原始台词保持对应';
+     preview.appendChild(p);
+     const table=document.createElement('table');table.className='storyboard-mini-table';
+     const head=document.createElement('tr');
+     ['镜号','画面','台词','画面字幕'].forEach(label=>{
+       const cell=document.createElement('th');cell.textContent=label;head.appendChild(cell);
+     });
+     table.appendChild(head);
+     (body.rows||[]).forEach(row=>{
+       const tr=document.createElement('tr');
+       [row.original_number,row.visual,row.dialogue,row.on_screen_text].forEach(value=>{
+         const cell=document.createElement('td');
+         cell.textContent=String(value??'');tr.appendChild(cell);
+       });
+       table.appendChild(tr);
+     });
+     preview.appendChild(table);
+   }catch(err){
+     if(requestNo!==previewRequest)return;
+     note.textContent='预览请求失败，请检查网络和登录状态；仍可点击保存查看校验信息。';
+   }
+ },320);
 }
+saveForm?.addEventListener('submit',async function(event){
+ event.preventDefault();
+ if(!saveButton)return;
+ saveButton.disabled=true;
+ saveStatus.textContent='正在保存原稿和生成参数…';
+ saveStatus.className='hint';
+ try{
+   const response=await fetch(saveForm.action,{
+     method:'POST',credentials:'same-origin',redirect:'follow',
+     headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'},
+     body:new FormData(saveForm)
+   });
+   const contentType=(response.headers.get('content-type')||'').toLowerCase();
+   if(!contentType.includes('application/json'))
+     throw new Error('登录已过期或服务器未返回保存结果（HTTP '+response.status+'），请重新登录');
+   const body=await response.json();
+   if(!response.ok){
+     const error=Object.values(body.errors||{}).flat().join('；');
+     throw new Error(error||body.message||'保存失败（HTTP '+response.status+'）');
+   }
+   savedStoryboard=String(body.storyboard_source??'');
+   storyboardDirty=Boolean(body.storyboard_dirty);
+   hasSavedScript=Boolean(body.has_script);
+   saveStatus.textContent='✓ 已保存。'+(inputKind.value==='storyboard'?'现在可以点击下方“AI 按分镜逐段生成剧本”。':'可以继续生成分镜与资产。');
+   saveStatus.className='hint storyboard-save-success';
+   syncExpandButton();
+   syncGenerationButton();
+ }catch(err){
+   saveStatus.textContent='✕ 未保存：'+String(err?.message||err);
+   saveStatus.className='hint storyboard-preview-error';
+ }finally{saveButton.disabled=false;}
+});
 inputKind?.addEventListener('change',showSourceMode);
 storyboardSource?.addEventListener('input',()=>{syncExpandButton();showStoryboardPreview();});
+scriptSource?.addEventListener('input',()=>{if(inputKind.value==='script')hasSavedScript=false;syncGenerationButton();});
 showSourceMode();showStoryboardPreview();
 if(['#script-editor','#script-segments'].includes(window.location.hash)){
  const anchor=window.location.hash;
