@@ -42,6 +42,10 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::get('/projects/{id}/export',[StudioController::class,'export'])->whereNumber('id')->name('project.export');
     Route::get('/updates',[UpdateController::class,'index'])->name('updates.index');
     Route::get('/updates/check',[UpdateController::class,'check'])->middleware('throttle:12,1')->name('updates.check');
+    Route::get('/updates/libraries/check',[UpdateController::class,'checkLibraries'])
+        ->middleware('throttle:12,1')->name('updates.libraries.check');
+    Route::post('/updates/libraries/apply',[UpdateController::class,'applyLibrary'])
+        ->middleware('throttle:8,1')->name('updates.libraries.apply');
     Route::get('/updates/status',[UpdateController::class,'status'])->name('updates.status');
     Route::post('/updates/apply',[UpdateController::class,'apply'])->middleware('throttle:3,1')->name('updates.apply');
     Route::get('/settings',[StudioController::class,'settings'])->name('settings');
