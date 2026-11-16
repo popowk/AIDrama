@@ -4,6 +4,10 @@ require dirname(__DIR__).'/vendor/autoload.php';
 $app=require dirname(__DIR__).'/bootstrap/app.php';
 $kernel=$app->make(\Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
+set_exception_handler(static function(\Throwable $e):void {
+    fwrite(STDERR,"Media smoke FAILED: ".get_class($e).": ".$e->getMessage()." in ".$e->getFile().":".$e->getLine()."\n");
+    exit(1);
+});
 
 use App\Http\Controllers\AssetController;
 use App\Services\AssetOrigin;
@@ -211,6 +215,8 @@ Http::fake(function($request) use ($pngBytes,&$downloadHits) {
 $controller->generate($id,$urlScene,new ImageEngine());
 DB::table('assets')->where('id',$urlScene)->update(['image_poll_after'=>now()->subSecond()]);
 $urlResult=$controller->status($id,$urlScene)->getData(true);
+if($urlResult['status']!=='ready'||$downloadHits!==1)
+    fwrite(STDERR,'URL image result debugging: '.json_encode($urlResult,JSON_UNESCAPED_UNICODE).' downloads='.$downloadHits."\n");
 assertMedia($urlResult['status']==='ready'&&$downloadHits===1,'fetch provider URL to private image asset');
 Storage::disk('local')->delete(DB::table('assets')->where('id',$urlScene)->value('file_path'));
 
