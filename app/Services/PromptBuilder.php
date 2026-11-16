@@ -93,6 +93,8 @@ class PromptBuilder
             ."不生成任何字幕、叠加文字或水印。\n"
             .VideoProfile::musicInstructions((bool)($project->allow_background_music??false))."\n"
             .VideoProfile::dialogueInstructions();
+        if(trim((string)($shot->dialogue??''))!=='')
+            $guard.="\n【必须逐字保留的对白（依次发言）】\n".$shot->dialogue;
         if($references!=='')$guard.="\n".$references;
         return trim(mb_substr($text,0,30000).$guard);
     }
