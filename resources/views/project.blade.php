@@ -58,13 +58,6 @@
 <p class="hint" id="expand-help">先保存粘贴的分镜表格，再点击这里。逐镜扩写不会删除已有分镜或资产。</p>
 @if($project->storyboard_dirty??false)<p class="hint">原始表格已更改，旧剧本和素材已保留。请重新扩写，之后才能用新内容生成分镜。</p>@endif
 </form>
-<form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
-<button class="button primary wide" id="generate-shots-btn" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
-<div id="generation-state" class="task-state" data-status="{{ $project->status }}">
-  @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
-  @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
-  @else<p class="hint">生成任务会保存在数据库。API 最长等待约 145 秒，遇到限流或暂时故障会自动重试一次。</p>@endif
-</div>
 @if(count($scriptSegments))
 <div id="script-segments" class="segment-workspace">
 <div class="section-heading space"><h3>逐镜扩写的剧本 · {{ count($scriptSegments) }} 段</h3><span class="muted">可逐段修改并合并回完整剧本</span></div>
@@ -78,6 +71,15 @@
 <div class="button-row"><button class="button outline" type="submit" @disabled($project->status==='generating')>保存全部分段剧本并同步完整剧本</button></div>
 </form></div>
 @endif
+<div class="post-script-generation">
+<form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
+<button class="button primary wide" id="generate-shots-btn" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
+<div id="generation-state" class="task-state" data-status="{{ $project->status }}">
+  @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
+  @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
+  @else<p class="hint">生成任务会保存在数据库。API 最长等待约 145 秒，遇到限流或暂时故障会自动重试一次。</p>@endif
+</div>
+</div>
 </section>
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
 <div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>

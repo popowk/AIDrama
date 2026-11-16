@@ -120,3 +120,6 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 #project-save-status:not(:empty){padding:8px 11px;background:#12243a;border:1px solid var(--line);border-radius:8px}
 .storyboard-mini-table td{white-space:normal;overflow-wrap:anywhere;vertical-align:top;max-width:280px;min-width:70px}
 .storyboard-mini-table th{white-space:nowrap}
+
+/* Keep final shot/asset generation actions below all editable script segments. */
+.post-script-generation{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
