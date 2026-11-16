@@ -55,3 +55,7 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .asset-lightbox-stage img{display:block;width:auto;max-width:100%;height:auto;max-height:100%;object-fit:contain}
 .asset-lightbox-actions .button{flex-shrink:0}
 @media(max-width:540px){.asset-media{grid-template-columns:minmax(0,1fr) 148px;gap:10px}.asset-preview,.asset-preview-trigger,.asset-placeholder{width:148px}.asset-preview-trigger img{height:112px;max-height:112px}.asset-lightbox{width:97vw;max-width:97vw;height:90dvh;padding:10px}.asset-lightbox-actions .muted{font-size:10px}}
+
+.asset-download-button{width:100%;max-width:184px;padding:7px 9px;font-size:12px;line-height:1.35;text-align:center;white-space:nowrap}
+.asset-preview .asset-download-button{display:inline-flex}
+@media(max-width:540px){.asset-download-button{max-width:148px}}
