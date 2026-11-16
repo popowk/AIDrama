@@ -22,9 +22,12 @@ class UpdateController
             ],
         ]);
     }
-    public function checkLibraries(LibraryUpdater $library):JsonResponse
+    public function checkLibraries(Request $request,LibraryUpdater $library):JsonResponse
     {
-        try{return response()->json($library->check());}
+        $kind=(string)$request->query('kind','');
+        if($kind!==''&&!in_array($kind,['styles','skills'],true))
+            return response()->json(['error'=>'不支持的素材库类型'],422);
+        try{return response()->json($library->check($kind!==''?$kind:null));}
         catch(\Throwable $e){return response()->json(['error'=>'素材库版本检查失败'],503);}
     }
 
