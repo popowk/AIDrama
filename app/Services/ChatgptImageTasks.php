@@ -147,9 +147,9 @@ class ChatgptImageTasks
                 isset($parts['user'])||isset($parts['pass'])||
                 (isset($parts['port'])&&(int)$parts['port']!==443)||
                 isset($parts['fragment'])||
-                !preg_match('~^/(?:[a-zA-Z0-9._-]+/)*files/[a-zA-Z0-9_./-]+$~D',$path)||
+                !preg_match('~^/(?:images|files)/[a-zA-Z0-9_./-]+$~D',$path)||
                 str_contains($path,'..'))
-                throw new RuntimeException('图片结果 URL 不在已配置的可信 API 文件域名及路径内');
+                throw new RuntimeException('图片结果 URL 不在可信 API 同域名的 /images/ 或 /files/ 目录内，请检查 chatgpt2api 图片存储 public_base_url 设置');
             $this->checkPublicDns($host);
             // The files endpoint serves public random file paths. Do not send
             // bearer tokens to file URLs, even on the same API host.
