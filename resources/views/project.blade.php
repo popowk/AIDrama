@@ -29,6 +29,7 @@
 @else<span class="muted">真实上传 / AI 生成</span>@endif
 </div>
 <p id="batch-image-status" class="hint" role="status"></p>
+<p class="hint">chatgpt2api 3.x 异步模式：提交后可关闭页面，任务 ID 会保留；再次打开页面自动查询结果。批量操作只提交任务，不重复生图。</p>
 <p class="hint">Logo、产品型号、产品外观必须上传原始素材；普通角色、场景和非品牌道具可使用图片模型生成。素材仅在管理员登录后可查看。</p>
 @if($assets->count())
 @foreach($assets as $a)
@@ -39,7 +40,7 @@
 <span class="chip">{{ $a->source_kind==='upload'?'必须使用上传素材':'允许 AI 生成' }}</span>
 <p>{{ $a->description }}</p>
 @if($a->voice_description)<p class="muted small">声音设定：{{ $a->voice_description }}</p>@endif
-<p class="muted small asset-status" id="asset-status-{{ $a->id }}">@if($a->file_path){{ $a->source_kind==='upload'?'已上传真实参考图':'AI 图片已生成' }}@elseif($a->source_kind==='upload')待客户上传原图@else{{ ['pending'=>'待生成','generating'=>'正在生成图片','error'=>'生成失败，可以重试'][$a->image_status]??$a->image_status }}@endif</p>
+<p class="muted small asset-status" id="asset-status-{{ $a->id }}">@if($a->file_path){{ $a->source_kind==='upload'?'已上传真实参考图':'AI 图片已生成' }}@elseif($a->source_kind==='upload')待客户上传原图@else{{ ['pending'=>'待生成','generating'=>'异步生成中，自动查询结果','error'=>'生成失败，可查看原因后重试'][$a->image_status]??$a->image_status }}@endif</p>
 @if($a->image_status==='error'&&$a->image_error)<p class="muted small">{{ $a->image_error }}</p>@endif
 <details><summary>查看资产生图提示词</summary><textarea rows="3" readonly>{{ $a->prompt }}</textarea></details>
 <div class="asset-buttons">
@@ -166,9 +167,10 @@ async function generateAsset(button,project,id,refresh=true){
       if(status)status.textContent='图片生成成功，正在显示预览…';
       if(refresh)window.location.reload();
     }else if(data.status==='generating'){
+      success=true; // A durable remote task is accepted; completion is polled separately.
       const card=document.getElementById('asset-'+id);
       if(card)card.dataset.pending='1';
-      if(status)status.textContent=data.message||'服务器正在生成图片，请勿重复提交';
+      if(status)status.textContent=data.message||'图片任务已提交，自动查询生成结果';
     }else{
       throw new Error(data.error||data.message||'服务端未返回预期的图片任务状态');
     }
@@ -202,7 +204,7 @@ async function generateAllAssets(button,project){
     const ok=await generateAsset(item,project,Number(item.dataset.assetId),false);
     if(ok)done++;
   }
-  if(status)status.textContent='批量任务完成，成功 '+done+' / '+buttons.length+' 项。';
+  if(status)status.textContent='批量提交完成，已提交或生成 '+done+' / '+buttons.length+' 项；完成后将自动显示图片。';
   button.disabled=false;
   if(done>0)window.location.reload();
 }
@@ -219,7 +221,7 @@ async function pollImageAsset(id,project){
     const status=document.getElementById('asset-status-'+id);
     if(data.status==='ready'){window.location.reload();return;}
     if(data.status==='generating'){
-      if(status)status.textContent='图片正在服务器生成，请不要重复提交';
+      if(status)status.textContent=data.message||'图片正在服务器生成（'+(data.stage||'等待')+'），请不要重复提交';
       if(button)button.disabled=true;
     }else{
       card.dataset.pending='0';
