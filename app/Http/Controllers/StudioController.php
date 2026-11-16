@@ -25,10 +25,10 @@ class StudioController
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
-            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::STYLES))],
+            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
             'skills_present'=>'sometimes|accepted',
             'skill_keys'=>'sometimes|array|max:8',
-            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::SKILLS))],
+            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
         $id=DB::table('projects')->insertGetId([
             'name'=>$v['name'],'script'=>$v['script'],'style'=>$v['style'],
@@ -63,10 +63,10 @@ class StudioController
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
-            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::STYLES))],
+            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
             'skills_present'=>'sometimes|accepted',
             'skill_keys'=>'sometimes|array|max:8',
-            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::SKILLS))],
+            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
         $previousMax=DB::table('shots')->where('project_id',$id)->max('duration_seconds')??0;
         if ($previousMax>(int)$v['shot_limit']) return back()->withErrors(['shot_limit'=>'现有镜头超过选择的时长上限，请重新生成分镜。']);
