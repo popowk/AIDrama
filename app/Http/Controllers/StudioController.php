@@ -32,6 +32,8 @@ class StudioController
             'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
+            'video_mode'=>['sometimes',Rule::in(['short','story'])],
+            'allow_background_music'=>['sometimes','boolean'],
             'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
             'skills_present'=>'sometimes|accepted',
             'skill_keys'=>'sometimes|array|max:8',
@@ -54,6 +56,8 @@ class StudioController
             'shot_limit'=>(int)$v['shot_limit'],
             'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
             'frame_ratio'=>$v['frame_ratio']??'landscape',
+            'video_mode'=>$v['video_mode']??'short',
+            'allow_background_music'=>$request->boolean('allow_background_music',false),
             'style_preset'=>$preset,
             'creative_skills'=>json_encode(CreativeLibrary::skillIds($v['skill_keys']??[])),
             'created_at'=>now(),'updated_at'=>now(),
@@ -111,6 +115,8 @@ class StudioController
             'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
+            'video_mode'=>['sometimes',Rule::in(['short','story'])],
+            'allow_background_music'=>['sometimes','boolean'],
             'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
             'skills_present'=>'sometimes|accepted',
             'skill_keys'=>'sometimes|array|max:8',
@@ -131,6 +137,8 @@ class StudioController
             $v['storyboard_dirty']=false;
         }
         $v['input_kind']=$kind;
+        $v['video_mode']=$v['video_mode']??($project->video_mode??'short');
+        $v['allow_background_music']=$request->boolean('allow_background_music',false);
         $preset=$v['style_preset']??($project->style_preset??'custom');
         $style=$preset==='custom'
             ?trim((string)($v['style']??$project->style))
@@ -186,6 +194,8 @@ class StudioController
                 'request_script'=>$project->script,'request_style'=>$project->style,
                 'request_shot_limit'=>$project->shot_limit,
                 'request_mode'=>$project->script_mode??'auto',
+                'request_video_mode'=>$project->video_mode??'short',
+                'request_background_music'=>(bool)($project->allow_background_music??false),
                 'request_ratio'=>$project->frame_ratio??'landscape',
                 'request_style_preset'=>$project->style_preset??'custom',
                 'request_skills'=>$project->creative_skills??null,
@@ -347,6 +357,7 @@ class StudioController
                 return response()->json(['status'=>'done','kind'=>'expand','segments'=>count($segments)]);
             }
             $engine->setMode((string)($job->request_mode??'auto'));
+            $engine->setVideoMode((string)($job->request_video_mode??'short'));
             $engine->setCreativeContext((string)($job->request_ratio??'landscape'),
                 (string)($job->request_style_preset??'custom'),
                 (string)($job->request_skills??''));
@@ -471,8 +482,13 @@ class StudioController
         $project=$this->project($id);
         $item=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
         if (!$item) abort(404);
-        $target=$request->query('target','kling');
-        return response()->json(['target'=>$target,'prompt'=>$builder->build($project,$item,$target)]);
+        $v=$request->validate(['target'=>['required',Rule::in(['kling','seedance','stable-diffusion'])]]);
+        try {
+            return response()->json(['target'=>$v['target'],
+                'prompt'=>$builder->generate($project,$item,$v['target'])]);
+        }catch(RuntimeException $e){
+            return response()->json(['message'=>$e->getMessage()],422);
+        }
     }
     public function settings() {
         $rows=DB::table('settings')->where('key','like','ai.%')->pluck('value','key');
