@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AIDrama 官方风格描述数据集；仅作为文字提示词，不含可执行脚本",
   "items": {
     "guofeng_3d": {
