@@ -21,9 +21,9 @@ class PromptBuilder
             $rules=is_file($file)?trim((string)file_get_contents($file)):'';
         }else{$rules=PromptPresets::active($target);}
         $mode=$project->detected_mode?:($project->script_mode==='auto'?'mixed':$project->script_mode);
-        $voice=match((string)($shot->delivery??'on_camera')){
-            'voiceover'=>'画外音 / 旁白','none'=>'无台词',default=>'角色现场对白',
-        };
+        $delivery=(string)($shot->delivery??'on_camera');
+        $voice=ShotDelivery::label($delivery);
+        $voiceDirection=ShotDelivery::direction($delivery);
         $profile=VideoProfile::normalize($project->video_mode??'short');
         $short=$profile==='short';
         $frame=(string)($project->frame_ratio??'landscape');
@@ -37,6 +37,8 @@ class PromptBuilder
         if($shot->action_before)
             $body.=($short?'同步动作（允许在做动作时说话）：':'开口之前的动作：')
                 .$shot->action_before."\n";
+        $body.="声音呈现：{$voice}\n";
+        if($voiceDirection!=='')$body.="人物视线、声音和动作调度：{$voiceDirection}\n";
         if($shot->dialogue)
             $body.="{$voice}（逐行区分角色）：{$shot->dialogue}\n";
         $body.="目标时长：{$shot->duration_seconds}秒，服装、场景、道具和人物保持一致。\n";
@@ -74,7 +76,7 @@ class PromptBuilder
             ->post($base.'/chat/completions',[
                 'model'=>$model,'temperature'=>0.25,
                 'messages'=>[
-                    ['role'=>'system','content'=>'你是专业视频提示词导演。把用户给出的分镜信息写成可直接用于视频生成模型的高质量提示词，保持原始事实、人物、台词、型号、画幅和时长。不输出解释，不编造参考图已上传的事实。不生成字幕、画面文字或水印。对白严格保留“人物名：台词”的发言顺序，不要自动加入背景音乐。必须保留全部提供参考图的需求。'],
+                    ['role'=>'system','content'=>'你是专业视频提示词导演。把用户给出的分镜信息写成可直接用于视频生成模型的高质量提示词，保持原始事实、人物、台词、型号、画幅和时长。不输出解释，不编造参考图已上传的事实。不生成字幕、画面文字或水印。根据分镜声音呈现区分：conversation 为人物对人物自然交流、看向对方而不是镜头；on_camera 才是人物对镜头口播；voiceover 为画外音。对白严格保留“人物名：台词”的发言顺序，不要自动加入背景音乐。必须保留全部提供参考图的需求。'],
                     ['role'=>'user','content'=>"请针对 {$target} 使用以下镜头事实和提示词模板撰写最终提示词。请直接返回纯文本。不要声称用户未上传图片；只列出需要提供的资产图片名称，不能假装这些图片已作为附件发送。\n\n".$basePrompt],
                 ],
             ]);
@@ -90,6 +92,7 @@ class PromptBuilder
         // the model cannot silently drop active asset references or no-BGM.
         $references=AssetReferencePicker::guidance($project,$shot);
         $guard="\n\n【生成约束】\n"
+            ."本镜声音呈现：".ShotDelivery::label((string)($shot->delivery??'on_camera'))."。".ShotDelivery::direction((string)($shot->delivery??'on_camera'))."\n"
             ."不生成任何字幕、叠加文字或水印。\n"
             .VideoProfile::musicInstructions((bool)($project->allow_background_music??false))."\n"
             .VideoProfile::dialogueInstructions();
