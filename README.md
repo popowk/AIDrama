@@ -148,12 +148,12 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 
 - AIDrama 通过 \`POST /api/image-tasks/generations\` 提交随机且持久保存的 \`client_task_id\`，即使提交确认被反向代理截断，也只用**同一任务 ID** 查询或幂等重试，避免重复生图。
 - 已保存的任务通过 \`GET /api/image-tasks?ids=...\` 查询。页面刷新后继续；关闭页面后，chatgpt2api 可在服务端继续生成，重新打开项目页会恢复查询（需在上游任务保留期限内）。
-- 上游任务成功后，从其 \`results[0].b64_json\` 或可信 **同 HTTPS 域名 /files/** URL 取得图片，校验尺寸与类型，并保存到 **AIDrama 私有 \`shared/storage\`**，不在项目页面直接暴露上游 URL。
+- 上游任务成功后，从其 \`results[0].b64_json\` 或可信 **同 HTTPS 域名 /images/、/files/** URL 取得图片，校验尺寸与类型，并保存到 **AIDrama 私有 \`shared/storage\`**，不在项目页面直接暴露上游 URL。
 - 可恢复的任务 \`actions.resume_poll=true\` 会自动尝试一次 \`POST /api/image-tasks/{task_id}/resume-poll\`；**不再次发起付费生成**。
 - 如果上游始终找不到已经提交的任务，AIDrama 会保留原任务 ID 和错误提示，不能据此认定模型未生成。先通过 chatgpt2api 的任务页面确认，不要反复点击重新生成。
 - 兼容其他仅有 \`/v1/images/generations\` 的图片服务时，手动切换为「通用 OpenAI 兼容 · 同步生成」。该兼容模式不会拥有 chatgpt2api 的异步结果找回能力。
 
-**注意：** 为防止服务器端请求伪造，返回图片 URL 必须使用与 AIDrama 图片 API Base URL **相同的公网 HTTPS 域名**，并位于 \`/files/\` 路径。若 chatgpt2api 单独设置了 \`CHATGPT2API_BASE_URL\`，确保它与对接的公网 API 域名一致。Laravel、MySQL 和私有素材目录均不因切换模式而删除或清空。
+**注意：** 为防止服务器端请求伪造，返回图片 URL 必须使用与 AIDrama 图片 API Base URL **相同的公网 HTTPS 域名**，并位于 \`/images/\`（默认图片存储）或 \`/files/\` 目录。chatgpt2api 的 \`image_storage.public_base_url\` 可能让图片使用另一域名，此时需先在上游设置与图片 API 一致的可信公网域名，不能关闭 AIDrama 的域名校验。Laravel、MySQL 和私有素材目录均不因切换模式而删除或清空。
 
 ### HTTP 500：Target class [view] does not exist
 
