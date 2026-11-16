@@ -50,6 +50,7 @@ final class LibraryUpdater
             if($type==='skills') {
                 $stages=$entry['stages']??null;
                 if(!is_array($stages)||count($stages)<1||count($stages)>3||
+                   count(array_filter($stages,'is_string'))!==count($stages)||
                    count($stages)!==count(array_unique($stages))||
                    array_diff($stages,['script','image','video']))
                     throw new RuntimeException('素材库技能 '.$id.' 使用了不支持的应用阶段');
@@ -126,10 +127,11 @@ final class LibraryUpdater
         return self::validate($type,$parsed);
     }
 
-    public function check():array
+    public function check(?string $only=null):array
     {
+        if($only!==null)self::ensure($only);
         $result=[];
-        foreach(self::TYPES as $type) {
+        foreach($only!==null?[$only]:self::TYPES as $type) {
             $local=$this->current($type);
             try {
                 $remote=$this->fetchRemote($type);
