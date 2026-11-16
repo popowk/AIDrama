@@ -142,6 +142,19 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 诊断会输出版本指针是否有效、release 文件完整性、共享缓存目录写入权限、Laravel 启动与 MySQL 连接是否成功、迁移缺失数量等。**CLI 与 PHP-FPM 可能加载不同的 php.ini 和 open_basedir**；命令行通过不代表网页一定正常。频繁覆盖版本后，可在宝塔中重启 PHP 8.4 服务以清理旧的 OPcache / PHP-FPM 进程，不要仅靠清空浏览器缓存。
 
 如果诊断显示迁移未执行，先备份数据库，再从后台补齐迁移（或使用当前正式版的 `php artisan migrate --force` 并确认配置从 shared 加载），不要直接手动删除表或修改 migration 记录。若网站入口已经无法使用，先将最新 ZIP 解压到原站点目录覆盖 `public/index.php` 和完整版本代码，保留 shared/，然后重启 PHP-FPM 并查看上述日志。
+### chatgpt2api 3.x 异步生图（推荐）
+
+在「模型设置 → 图片模型」配置最新版 **yukkcat/chatgpt2api 3.x** 的 HTTPS API Base URL（以 \`/v1\` 结尾）、API Key 和实际支持的图片模型名称。图片生成模式选择「chatgpt2api 3.x · 异步任务」（默认），无需在 AIDrama 上等待一次长达数分钟的 \`/v1/images/generations\` 同步响应。
+
+- AIDrama 通过 \`POST /api/image-tasks/generations\` 提交随机且持久保存的 \`client_task_id\`，即使提交确认被反向代理截断，也只用**同一任务 ID** 查询或幂等重试，避免重复生图。
+- 已保存的任务通过 \`GET /api/image-tasks?ids=...\` 查询。页面刷新后继续；关闭页面后，chatgpt2api 可在服务端继续生成，重新打开项目页会恢复查询（需在上游任务保留期限内）。
+- 上游任务成功后，从其 \`results[0].b64_json\` 或可信 **同 HTTPS 域名 /files/** URL 取得图片，校验尺寸与类型，并保存到 **AIDrama 私有 \`shared/storage\`**，不在项目页面直接暴露上游 URL。
+- 可恢复的任务 \`actions.resume_poll=true\` 会自动尝试一次 \`POST /api/image-tasks/{task_id}/resume-poll\`；**不再次发起付费生成**。
+- 如果上游始终找不到已经提交的任务，AIDrama 会保留原任务 ID 和错误提示，不能据此认定模型未生成。先通过 chatgpt2api 的任务页面确认，不要反复点击重新生成。
+- 兼容其他仅有 \`/v1/images/generations\` 的图片服务时，手动切换为「通用 OpenAI 兼容 · 同步生成」。该兼容模式不会拥有 chatgpt2api 的异步结果找回能力。
+
+**注意：** 为防止服务器端请求伪造，返回图片 URL 必须使用与 AIDrama 图片 API Base URL **相同的公网 HTTPS 域名**，并位于 \`/files/\` 路径。若 chatgpt2api 单独设置了 \`CHATGPT2API_BASE_URL\`，确保它与对接的公网 API 域名一致。Laravel、MySQL 和私有素材目录均不因切换模式而删除或清空。
+
 ### HTTP 500：Target class [view] does not exist
 
 在 v0.1.100 等旧版本的 GitHub Release 中，打包时排除了 `bootstrap/cache/` 目录；新版本目录又可能由宝塔上传程序设为 `mysql:mysql`。Laravel 在应用启动时无法写入 `packages.php`、`services.php`，可能最终表现为 `Target class [view] does not exist`。
