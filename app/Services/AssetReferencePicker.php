@@ -40,7 +40,7 @@ final class AssetReferencePicker
             $lines[]='- 请提供「'.$item['name'].'」图片'
                 .($item['direct']?'（本镜重点参考）':'（按画面需要参考）');
         }
-        $lines[]='若真实品牌或型号的参考图尚未实际提供，保留“提供该图片”的素材要求；不得虚构产品外观、商标、型号或 Logo。';
+        $lines[]='真实品牌和型号的视觉外观必须以对应的参考图片为准，不能自行设计、猜测商标、型号、产品外形或 Logo。';
         return implode("\n",$lines);
     }
 }
