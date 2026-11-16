@@ -170,8 +170,12 @@ class ChatgptImageTasks
 
         // Never send a request to the URL's advertised host: only the one
         // already validated and configured by the administrator is used.
-        $loopback=in_array($host,['localhost','127.0.0.1','::1'],true);
-        if($host!==$config['host']&&!$loopback)
+        $originHost=trim($host,'[]');
+        $localHost=in_array($originHost,['localhost','127.0.0.1','::1'],true)
+            || (filter_var($originHost,FILTER_VALIDATE_IP)!==false
+                && filter_var($originHost,FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)===false);
+        if($host!==$config['host']&&!$localHost)
             throw new RuntimeException(
                 '图片结果的域名与配置的 API 域名不一致；请核对 chatgpt2api 的 image_storage.public_base_url'
             );
