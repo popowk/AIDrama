@@ -126,6 +126,59 @@ class ChatgptImageTasks
         return $data;
     }
 
+    /**
+     * chatgpt2api often publishes http://localhost:3000/images/... when
+     * behind a TLS-terminating reverse proxy. Never request that advertised
+     * origin. Extract a narrowly validated image path and fetch it ONLY from
+     * the configured public HTTPS API origin on port 443.
+     *
+     * Supports:
+     *  - /images/... or /files/... relative links
+     *  - http(s) URLs on the configured host (even if the internal port leaks)
+     *  - loopback URLs produced by chatgpt2api's default local base_url
+     * Unknown public domains, redirects, traversal and other schemes remain
+     * rejected. This is an address rewrite, not an SSRF allowlist expansion.
+     */
+    private function trustedDownloadUrl(string $value):string
+    {
+        $config=$this->config();
+        $value=trim($value);
+        if($value===''||strlen($value)>4096||
+           preg_match('/[\x00-\x1f\x7f\s]/',$value))
+            throw new RuntimeException('chatgpt2api 返回的图片 URL 为空、过长或含非法字符');
+
+        if(str_starts_with($value,'/') && !str_starts_with($value,'//')) {
+            $parts=parse_url('https://'.$config['host'].$value);
+        }elseif(str_starts_with($value,'//')) {
+            $parts=parse_url('https:'.$value);
+        }else{
+            $parts=parse_url($value);
+        }
+
+        $scheme=is_array($parts)?strtolower((string)($parts['scheme']??'')):'';
+        $host=is_array($parts)?strtolower((string)($parts['host']??'')):'';
+        $path=is_array($parts)?(string)($parts['path']??''):'';
+        $query=is_array($parts)?(string)($parts['query']??''):'';
+        if(!$parts||!in_array($scheme,['http','https'],true)||!$host||
+           isset($parts['user'])||isset($parts['pass'])||isset($parts['fragment']))
+            throw new RuntimeException('chatgpt2api 图片 URL 的协议或结构不受支持（只接受 HTTP(S) 图片路径）');
+        if(!preg_match('~^/(?:images|files)/[A-Za-z0-9_./-]+$~D',$path)||
+           str_contains($path,'..'))
+            throw new RuntimeException('图片 URL 的文件路径不在可信 /images/ 或 /files/ 目录内');
+        if(strlen($query)>1024||($query!==''&&!preg_match('/^[A-Za-z0-9._~%=&+;:-]+$/D',$query)))
+            throw new RuntimeException('图片 URL 带有不支持的查询参数');
+
+        // Never send a request to the URL's advertised host: only the one
+        // already validated and configured by the administrator is used.
+        $loopback=in_array($host,['localhost','127.0.0.1','::1'],true);
+        if($host!==$config['host']&&!$loopback)
+            throw new RuntimeException(
+                '图片结果的域名与配置的 API 域名不一致；请核对 chatgpt2api 的 image_storage.public_base_url'
+            );
+        $this->checkPublicDns($config['host']);
+        return 'https://'.$config['host'].$path.($query!==''?'?'.$query:'');
+    }
+
     public function image(array $remoteTask):array
     {
         $item=$remoteTask['results'][0]??null;
@@ -138,22 +191,7 @@ class ChatgptImageTasks
             $bytes=base64_decode($encoded,true);
             if(!is_string($bytes))throw new RuntimeException('图片 base64 解码失败');
         } else {
-            $url=(string)($item['url']??'');
-            $parts=parse_url($url);
-            $config=$this->config();
-            $host=is_array($parts)?strtolower((string)($parts['host']??'')):'';
-            $path=is_array($parts)?(string)($parts['path']??''):'';
-            if(!$parts||($parts['scheme']??'')!=='https'||!$host||
-                isset($parts['user'])||isset($parts['pass'])||
-                (isset($parts['port'])&&(int)$parts['port']!==443)||
-                isset($parts['fragment']))
-                throw new RuntimeException('chatgpt2api 返回的图片 URL 格式不安全，拒绝下载');
-            if($host!==$config['host'])
-                throw new RuntimeException('图片已生成，但返回的图片域名与配置的 API 域名不一致；请检查 chatgpt2api 的 image_storage.public_base_url');
-            if(!preg_match('~^/(?:images|files)/[a-zA-Z0-9_./-]+$~D',$path)||
-                str_contains($path,'..'))
-                throw new RuntimeException('图片已生成，但返回的下载路径不在 /images/ 或 /files/ 下；请检查 chatgpt2api 的图片存储设置');
-            $this->checkPublicDns($host);
+            $url=$this->trustedDownloadUrl((string)($item['url']??''));
             // The files endpoint serves public random file paths. Do not send
             // bearer tokens to file URLs, even on the same API host.
             $response=Http::accept('image/png,image/jpeg,image/webp')
