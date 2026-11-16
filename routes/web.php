@@ -57,4 +57,8 @@ Route::middleware(RequireAdmin::class)->group(function() {
         ->whereNumber('id')->whereNumber('asset')->name('asset.status');
     Route::get('/projects/{id}/assets/{asset}/file',[AssetController::class,'file'])
         ->whereNumber('id')->whereNumber('asset')->name('asset.file');
+    Route::get('/projects/{id}/assets/{asset}/thumbnail',[AssetController::class,'thumbnail'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.thumbnail');
+    Route::get('/projects/{id}/assets/{asset}/download',[AssetController::class,'download'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.download');
 });
