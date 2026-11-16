@@ -142,29 +142,16 @@
 <form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset" data-inline-save="asset-prompt-reset">@csrf
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>恢复使用类别提示词</button></form>
 </details>
-<div class="asset-buttons">
-<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
-@csrf
-<label class="small">该资产画幅（覆盖项目默认）
-<select name="frame_ratio" @disabled($a->image_status==='generating')>
-<option value="inherit" @selected(($a->frame_ratio??'inherit')==='inherit')>沿用项目默认 · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }}</option>
-<option value="landscape" @selected(($a->frame_ratio??'inherit')==='landscape')>横屏 16:9</option>
-<option value="portrait" @selected(($a->frame_ratio??'inherit')==='portrait')>竖屏 9:16</option>
-<option value="square" @selected(($a->frame_ratio??'inherit')==='square')>方形 1:1</option>
-</select></label>
-<button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
-</form>
 @if($a->source_kind==='upload')
+<div class="asset-buttons">
 <form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload" data-inline-save="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
-</form>
-@else
-<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+</form></div>
 @endif
 </div>
-</div>
 <div class="asset-preview">
+<div class="asset-preview-visual">
 @if($a->file_path)
 <button type="button" class="asset-preview-trigger"
     data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}"
@@ -181,6 +168,24 @@
 <div class="asset-placeholder">{{ $a->source_kind==='upload'?'等待客户上传':'等待生成图片' }}</div>
 @endif
 </div>
+<div class="asset-preview-controls">
+<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
+@csrf
+<label class="small">图片画幅
+<select name="frame_ratio" data-saved-value="{{ $a->frame_ratio??'inherit' }}" @disabled($a->image_status==='generating'||$project->status==='generating'||$a->is_archived)>
+<option value="inherit" @selected(($a->frame_ratio??'inherit')==='inherit')>项目默认 · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }}</option>
+<option value="landscape" @selected(($a->frame_ratio??'inherit')==='landscape')>横屏 16:9</option>
+<option value="portrait" @selected(($a->frame_ratio??'inherit')==='portrait')>竖屏 9:16</option>
+<option value="square" @selected(($a->frame_ratio??'inherit')==='square')>方形 1:1</option>
+</select></label>
+<span class="asset-ratio-indicator" role="status" aria-live="polite"></span>
+</form>
+@if($a->source_kind!=='upload')
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+@endif
+</div>
+</div>
+
 </div>
   </div>
 </div>
