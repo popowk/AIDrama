@@ -148,7 +148,7 @@ grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
 grep -q '项目画面比例' "$RUNNER_TEMP/project-details.html"
 grep -q '风格库' "$RUNNER_TEMP/project-details.html"
 grep -q '技能库' "$RUNNER_TEMP/project-details.html"
-php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("SELECT frame_ratio,style_preset,creative_skills,style FROM projects WHERE id=?");$s->execute([(int)$argv[1]]);$r=$s->fetch(PDO::FETCH_ASSOC);if(!$r||$r["frame_ratio"]!=="portrait"||$r["style_preset"]!=="guofeng_3d"||$r["style"]!=="3D 国风动画"||!in_array("continuity",json_decode($r["creative_skills"],true)??[],true)){fwrite(STDERR,"Project style assertion failed: ".json_encode($r,JSON_UNESCAPED_UNICODE)."\\n");exit(1);}' "${PROJECT_URL##*/}"
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e;charset=utf8mb4","root","aidrama-ci-only");$s=$p->prepare("SELECT frame_ratio,style_preset,creative_skills,style FROM projects WHERE id=?");$s->execute([(int)$argv[1]]);$r=$s->fetch(PDO::FETCH_ASSOC);if(!$r||$r["frame_ratio"]!=="portrait"||$r["style_preset"]!=="guofeng_3d"||$r["style"]!=="3D 国风动画"||!in_array("continuity",json_decode($r["creative_skills"],true)??[],true)){fwrite(STDERR,"Project style assertion failed: ".json_encode($r,JSON_UNESCAPED_UNICODE)."\\n");exit(1);}' "${PROJECT_URL##*/}"
 echo "Project portrait ratio, selectable style preset and creative skill selections persisted"
 # Verify private client-product image upload, session gate, and preview.
 PROJECT_ID="${PROJECT_URL##*/}"
