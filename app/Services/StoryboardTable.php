@@ -18,7 +18,7 @@ final class StoryboardTable
         foreach($lines as $line) if(trim($line)!==''){ $first=trim($line); break; }
         $format=str_contains($first,"\t")?'tsv':(str_contains($first,'|')?'markdown':'csv');
         if($format==='csv' && substr_count($first,',')<2)
-            throw new RuntimeException('请粘贴带列名的 Markdown 表格、Excel 制表符表格或 CSV 表格');
+            return self::parseFlattened($lines);
         $aliases=[
             'number'=>['镜号','镜头号','序号','编号','镜头','shot','shotno','no','#'],
             'visual'=>['画面','画面描述','画面内容','镜头画面','分镜画面','视觉','场景','分镜描述','镜头描述'],
@@ -70,6 +70,77 @@ final class StoryboardTable
             ];
         }
         if(!$rows) throw new RuntimeException('表格未解析出有效分镜，请检查是否有“画面”或“台词”列');
+        return $rows;
+    }
+
+    /**
+     * ChatGPT/HTML table clipboard fallback: every cell became a line, e.g.
+     * 镜号\n画面\n台词\n画面字幕\n1\n场景\n对白\n字幕\n2\n...
+     * Rows are bounded by numeric shot identifiers, not by physical lines.
+     */
+    private static function parseFlattened(array $lines):array
+    {
+        $lines=array_values(array_filter(
+            array_map(static fn($v)=>trim((string)$v),$lines),
+            static fn($v)=>$v!==''
+        ));
+        if(!$lines) throw new RuntimeException('请先粘贴分镜内容');
+
+        $names=[
+            '镜号'=>'number','镜头号'=>'number','序号'=>'number',
+            '编号'=>'number','镜头'=>'number',
+            '画面'=>'visual','画面描述'=>'visual','画面内容'=>'visual','镜头画面'=>'visual','分镜画面'=>'visual',
+            '台词'=>'dialogue','口播'=>'dialogue','对白'=>'dialogue','旁白'=>'dialogue','配音'=>'dialogue',
+            '画面字幕'=>'on_screen_text','字幕'=>'on_screen_text','画面文案'=>'on_screen_text','屏幕文字'=>'on_screen_text',
+            '时长'=>'duration','预计时长'=>'duration','时长秒'=>'duration',
+        ];
+        $fields=[];$offset=0;
+        // Recognize column titles spread over successive lines.
+        foreach(array_slice($lines,0,6) as $line) {
+            $key=mb_strtolower(preg_replace('/[\s_：:()（）\-]/u','',$line));
+            if(!isset($names[$key]))break;
+            $fields[]=$names[$key];$offset++;
+        }
+        if(!in_array('visual',$fields,true) && !in_array('dialogue',$fields,true))
+            $offset=0;
+        if(!$fields || $offset===0)
+            $fields=['number','visual','dialogue','on_screen_text'];
+
+        $rows=[];$currentNumber=null;$body=[];
+        $flush=static function()use(&$rows,&$currentNumber,&$body,$fields):void {
+            if($currentNumber===null)return;
+            if(count($rows)>=40) throw new RuntimeException('单次最多扩写 40 个镜头，请分批粘贴');
+            $data=['number'=>$currentNumber,'visual'=>'','dialogue'=>'','on_screen_text'=>'','duration'=>''];
+            $contentFields=array_values(array_filter($fields,static fn($key)=>$key!=='number'));
+            foreach($body as $i=>$item) {
+                $key=$contentFields[$i]??'on_screen_text';
+                if(!array_key_exists($key,$data))continue;
+                $data[$key].=($data[$key]!==''?"\n":'').$item;
+            }
+            // If a row had only one nonempty cell it is probably a broken paste.
+            if($data['visual']==='' && $data['dialogue']==='' && $data['on_screen_text']==='')
+                throw new RuntimeException('镜号 '.$currentNumber.' 后没有画面/台词，请检查粘贴内容');
+            $num=(int)$currentNumber;
+            $rows[]=[
+                'sequence'=>count($rows)+1,
+                'original_number'=>(string)$currentNumber,
+                'title'=>'镜头 '.str_pad((string)$num,2,'0',STR_PAD_LEFT),
+                'visual'=>mb_substr($data['visual'],0,10000),
+                'dialogue'=>mb_substr($data['dialogue'],0,10000),
+                'on_screen_text'=>mb_substr($data['on_screen_text'],0,5000),
+                'duration'=>mb_substr($data['duration'],0,30),
+            ];
+        };
+        foreach(array_slice($lines,$offset) as $line) {
+            // Bare line "1", "2", "03" or "镜头 4" starts a new record.
+            if(preg_match('/^(?:第\s*)?(?:镜头\s*)?([0-9]{1,3})\s*(?:号|镜)?[.、．]?\s*$/u',$line,$matches)) {
+                $flush();$currentNumber=$matches[1];$body=[];continue;
+            }
+            if($currentNumber===null)continue;
+            $body[]=$line;
+        }
+        $flush();
+        if(!$rows)throw new RuntimeException('未识别到镜号。请粘贴“镜号、画面、台词、画面字幕”表格，或从 Excel 直接复制');
         return $rows;
     }
 
