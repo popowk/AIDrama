@@ -76,7 +76,14 @@ try {
     $line('Laravel bootstrap','OK');
     $viewBound=$app->bound('view');
     $line('Laravel view service',$viewBound?'OK':'MISSING');
-    $cacheFile=$release.'/bootstrap/cache/config.php';
+    $cacheDir=$root.'/shared/storage/framework/cache/bootstrap/'.$chosen;
+    $line('Private bootstrap cache writable',is_writable($cacheDir));
+    $line('Release bootstrap cache exists',is_dir($release.'/bootstrap/cache'));
+    $line('Services manifest',is_file($app->getCachedServicesPath()));
+    $line('Packages manifest',is_file($app->getCachedPackagesPath()));
+    $line('Services cache path',$app->getCachedServicesPath());
+    $line('Packages cache path',$app->getCachedPackagesPath());
+    $cacheFile=$app->getCachedConfigPath();
     $line('Configuration cached',is_file($cacheFile));
     if(is_file($cacheFile)) {
         $providers=\Illuminate\Support\Facades\Config::get('app.providers',[]);
