@@ -103,28 +103,57 @@ final class LibraryUpdater
     private function fetchRemote(string $type):array
     {
         self::ensure($type);
-        $curl=curl_init(self::RAW_BASE.$type.'.json');
-        if(!$curl)throw new RuntimeException('无法初始化 GitHub 素材库检查');
-        curl_setopt_array($curl,[
-            CURLOPT_RETURNTRANSFER=>true,
-            CURLOPT_FOLLOWLOCATION=>false,
-            CURLOPT_CONNECTTIMEOUT=>7,
-            CURLOPT_TIMEOUT=>14,
-            CURLOPT_SSL_VERIFYPEER=>true,
-            CURLOPT_SSL_VERIFYHOST=>2,
-            CURLOPT_USERAGENT=>'AIDrama-Library-Updater/1',
-            CURLOPT_HTTPHEADER=>['Accept: application/json'],
-        ]);
-        $body=curl_exec($curl);
-        $status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-        curl_close($curl);
-        if(!is_string($body)||$status!==200)
-            throw new RuntimeException('获取 GitHub '.($type==='styles'?'风格库':'技能库').'失败（HTTP '.$status.'）');
-        if(strlen($body)>self::MAX_BYTES)
-            throw new RuntimeException('远程素材库内容过大，已拒绝下载');
-        try{$parsed=json_decode($body,true,512,JSON_THROW_ON_ERROR);}
-        catch(\JsonException $e){throw new RuntimeException('远程素材库不是有效 JSON');}
-        return self::validate($type,$parsed);
+        // Raw GitHub is fast but often unreachable from some VPS networks.
+        // Only fixed official GitHub addresses may be used; API fallback avoids
+        // the need to trust third-party update mirrors.
+        $urls=[
+            ['url'=>self::RAW_BASE.$type.'.json','api'=>false],
+            ['url'=>'https://api.github.com/repos/popowk/AIDrama/contents/library/'.
+                $type.'.json?ref=main','api'=>true],
+        ];
+        $lastStatus=0;
+        foreach($urls as $endpoint) {
+            $curl=curl_init($endpoint['url']);
+            if(!$curl)continue;
+            curl_setopt_array($curl,[
+                CURLOPT_RETURNTRANSFER=>true,
+                CURLOPT_FOLLOWLOCATION=>false,
+                CURLOPT_CONNECTTIMEOUT=>5,
+                CURLOPT_TIMEOUT=>10,
+                CURLOPT_SSL_VERIFYPEER=>true,
+                CURLOPT_SSL_VERIFYHOST=>2,
+                CURLOPT_USERAGENT=>'AIDrama-Library-Updater/1',
+                CURLOPT_HTTPHEADER=>['Accept: application/json'],
+            ]);
+            $body=curl_exec($curl);
+            $lastStatus=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+            curl_close($curl);
+            if(!is_string($body)||$lastStatus!==200||strlen($body)>self::MAX_BYTES*2)
+                continue;
+            try{
+                $parsed=json_decode($body,true,512,JSON_THROW_ON_ERROR);
+                if($endpoint['api']) {
+                    if(!is_array($parsed)||($parsed['encoding']??'')!=='base64'||
+                       !is_string($parsed['content']??null))
+                        continue;
+                    $decoded=base64_decode($parsed['content'],true);
+                    if(!is_string($decoded)||strlen($decoded)>self::MAX_BYTES)
+                        continue;
+                    $parsed=json_decode($decoded,true,512,JSON_THROW_ON_ERROR);
+                }
+                if(!$endpoint['api'] && strlen($body)>self::MAX_BYTES)continue;
+                return self::validate($type,$parsed);
+            }catch(\JsonException $e){
+                continue;
+            }catch(RuntimeException $e){
+                // Invalid but authentic catalogs must not replace safe local data.
+                throw $e;
+            }
+        }
+        throw new RuntimeException(
+            '无法从 GitHub 官方源读取'.($type==='styles'?'风格库':'技能库').
+            '（HTTP '.$lastStatus.'），请检查 VPS 的 GitHub 连通性'
+        );
     }
 
     public function check(?string $only=null):array
