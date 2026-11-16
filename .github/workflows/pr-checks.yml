@@ -28,6 +28,8 @@ jobs:
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/asset-controls-smoke.php
           node tests/inline-project-ui.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-saves-smoke.php
+          node tests/inline-settings-ui.test.cjs
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-settings-smoke.php
           node tests/storyboard-state.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/prompt-optional-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/storyboard-async-smoke.php
