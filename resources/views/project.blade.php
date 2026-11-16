@@ -803,10 +803,14 @@ async function loadPrompt(shot,project){
  try {
   const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
   if(!csrf)throw new Error('登录已失效，请刷新页面');
+  const shotForm=document.getElementById('shot-'+shot)?.querySelector('form[data-inline-save="shot"]');
+  if(!shotForm)throw new Error('无法读取当前分镜编辑框');
+  const payload=new FormData(shotForm);
+  payload.set('target',type);
   const res=await fetch('/projects/'+project+'/shots/'+shot+'/prompt',{
     method:'POST',credentials:'same-origin',
-    headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json','Accept':'application/json'},
-    body:JSON.stringify({target:type})
+    headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json'},
+    body:payload
   });
   const data=await res.json();
   if(!res.ok)throw new Error(data.message||'HTTP '+res.status);
