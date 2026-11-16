@@ -123,7 +123,9 @@ function install(string $root,array $input): string {
     if(file_put_contents($envTmp,$env,LOCK_EX)===false)fail('无法保存配置');
     chmod($envTmp,0600);
     if(!rename($envTmp,$envFile))fail('启用配置文件失败');
-    makeDir($versionDir.'/bootstrap/cache');
+    // Laravel now writes its per-release bootstrap manifests under private
+    // shared/storage, not the (possibly read-only) release directory.
+    makeDir($root.'/shared/storage/framework/cache/bootstrap/'.$tag);
     // Run migrations without invoking shell, Composer, Node or Supervisor.
     require $versionDir.'/vendor/autoload.php';
     $app=require $versionDir.'/bootstrap/app.php';
