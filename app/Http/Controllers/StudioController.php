@@ -152,12 +152,18 @@ class StudioController
                     $key=$asset['type'].'|'.$asset['name'];
                     $included[$key]=true;
                     $old=$previous->get($key);
-                    if($old&&$old->file_path &&
+                    if($old &&
+                        ($old->file_path || ($old->image_task_id && $old->image_status==='generating')) &&
                         ($old->source_kind==='upload' || ($asset['source_kind']??'generate')==='generate')) {
-                        // Never reuse an AI-generated image as a "customer original".
+                        // Reuse authentic uploaded assets and recover still-running
+                        // remote image tasks after a storyboard regeneration.
+                        // Never treat an AI output as a customer original.
                         $asset['file_path']=$old->file_path;
                         $asset['source_kind']=$old->source_kind==='upload'?'upload':($asset['source_kind']??'generate');
                         $asset['image_status']=$old->image_status;
+                        foreach(['image_task_id','image_remote_status','image_started_at',
+                                 'image_poll_after','image_resume_attempted','image_error'] as $field)
+                            $asset[$field]=$old->$field;
                     }
                     DB::table('assets')->insert($asset+[
                         'project_id'=>$id,'created_at'=>now(),'updated_at'=>now(),
