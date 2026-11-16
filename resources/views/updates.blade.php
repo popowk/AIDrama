@@ -13,6 +13,27 @@
 <p class="hint">下载完整 ZIP → SHA256 校验 → 预备版本 → 数据库迁移 → 切换版本。不会通过脚本执行外部 shell 命令，也不依赖 symlink()。</p>
 <p class="hint">更新前建议在宝塔备份数据库。新版本若包含数据库变更，一键更新时会自动执行迁移；如果迁移失败，不会切换活动程序，但 MySQL 可能已执行部分结构变更。</p>
 </section>
+<section class="panel settings-panel library-update-panel">
+<div class="section-heading"><h2>风格库与技能库</h2><span class="chip">独立数据更新</span></div>
+<p class="hint">与程序版本分别检测。更新只下载 GitHub 官方仓库中经过校验的 JSON 文字提示词，不执行插件代码；不会删除自定义模板或历史项目。</p>
+@foreach(['styles'=>'视觉风格库','skills'=>'创作技能库'] as $kind=>$label)
+<div class="library-update-row" data-library="{{ $kind }}">
+    <div class="library-update-desc">
+        <strong>{{ $label }}</strong>
+        <p class="muted small">{{ $kind==='styles'?'材质、色彩、灯光、镜头语言等描述性风格提示词':'分镜时序、三视图、画面审查、镜头连续性等可组合创作规则' }}</p>
+        <p class="muted small">
+          当前：<span class="library-current">{{ $libraryCurrent[$kind]['version'] }}</span>
+          · 最新：<span class="library-latest">待检查</span>
+          · <span class="library-status">{{ $libraryCurrent[$kind]['count'] }} 项 · 待检查</span>
+        </p>
+    </div>
+    <button type="button" class="button outline library-check" data-kind="{{ $kind }}">检查</button>
+    <button type="button" class="button primary library-apply" data-kind="{{ $kind }}" disabled>更新</button>
+</div>
+@endforeach
+<p id="library-message" class="hint" role="status" aria-live="polite">点击顶部「检查更新」会同时检查程序、风格库与技能库，也可以单独检查。</p>
+<p class="hint">正在使用的项目会继续采用原有配置；更新库后，新发起的分镜或图片生成可使用更新后的规则。历史已生成图片不会被替换。</p>
+</section>
 <script>
 const checkBtn=document.getElementById('check-update');
 const applyBtn=document.getElementById('apply-update');
@@ -82,6 +103,74 @@ applyBtn.addEventListener('click',async()=>{
   if(updating)setMessage('更新请求连接已中断，仍在检查服务器进度：'+e.message);
  }
 });
+
+const endpointLibraryCheck=@json(route('updates.libraries.check'));
+const endpointLibraryApply=@json(route('updates.libraries.apply'));
+const libraryNotice=document.getElementById('library-message');
+const libraryRows={};
+document.querySelectorAll('[data-library]').forEach(row=>{
+  libraryRows[row.dataset.library]=row;
+});
+async function checkLibraryVersions(){
+  for(const row of Object.values(libraryRows)){
+    row.querySelector('.library-status').textContent='正在连接 GitHub…';
+    row.querySelector('.library-apply').disabled=true;
+    row.querySelector('.library-check').disabled=true;
+  }
+  try{
+    const response=await fetch(endpointLibraryCheck,{
+      credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'
+    });
+    const body=await response.json();
+    if(!response.ok)throw new Error(body.error||'无法检查素材库更新');
+    for(const kind of ['styles','skills']){
+      const row=libraryRows[kind],info=body[kind];
+      if(!row||!info)continue;
+      row.querySelector('.library-current').textContent=info.current||'—';
+      row.querySelector('.library-latest').textContent=info.latest||'查询失败';
+      row.querySelector('.library-status').textContent=info.error||
+        (info.available?'发现新版本':'已是最新版本');
+      row.querySelector('.library-apply').disabled=!info.available;
+    }
+    libraryNotice.textContent='风格库和技能库版本检查完成，可单独选择更新。';
+  }catch(e){
+    libraryNotice.textContent='库版本检查失败：'+(e.message||String(e));
+    for(const row of Object.values(libraryRows))
+      row.querySelector('.library-status').textContent='暂时无法检查';
+  }finally{
+    for(const row of Object.values(libraryRows))
+      row.querySelector('.library-check').disabled=false;
+  }
+}
+checkBtn.addEventListener('click',()=>checkLibraryVersions());
+for(const row of Object.values(libraryRows)){
+  row.querySelector('.library-check').addEventListener('click',()=>checkLibraryVersions());
+  row.querySelector('.library-apply').addEventListener('click',async event=>{
+    const kind=event.currentTarget.dataset.kind;
+    const label=kind==='styles'?'视觉风格库':'创作技能库';
+    if(!confirm('将更新'+label+'的官方文字描述内容；不会覆盖你的自定义提示词或已有项目。确定继续？'))return;
+    const apply=event.currentTarget;
+    apply.disabled=true;
+    row.querySelector('.library-status').textContent='正在更新…';
+    libraryNotice.textContent='正在下载并验证'+label+'的独立数据版本…';
+    try{
+      const res=await fetch(endpointLibraryApply,{
+        method:'POST',credentials:'same-origin',
+        headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json','Content-Type':'application/json'},
+        body:JSON.stringify({kind})
+      });
+      const result=await res.json();
+      if(!res.ok)throw new Error(result.error||'更新失败');
+      row.querySelector('.library-current').textContent=result.version;
+      row.querySelector('.library-latest').textContent=result.version;
+      row.querySelector('.library-status').textContent='已是最新版本';
+      libraryNotice.textContent=result.message||label+'已更新';
+    }catch(e){
+      row.querySelector('.library-status').textContent='更新失败';
+      libraryNotice.textContent=label+'更新失败：'+(e.message||String(e));
+    }
+  });
+}
 refreshStatus();
 </script>
 @endsection
