@@ -84,7 +84,7 @@ class StudioController
         $creativeSkills=CreativeLibrary::skills();
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets'));
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -243,9 +243,12 @@ class StudioController
 
     public function saveSegments(Request $request,int $id) {
         $project=$this->project($id);
-        if($project->status==='generating')
+        if($project->status==='generating') {
+            if($request->expectsJson())
+                return response()->json(['message'=>'生成期间不能编辑分段剧本。'],409);
             return redirect()->to(route('project.show',$id).'#script-editor')
                 ->withErrors(['script'=>'生成期间不能编辑分段剧本。']);
+        }
         $segments=json_decode((string)($project->script_segments??'[]'),true)?:[];
         if(!$segments)abort(404);
         $v=$request->validate([
@@ -256,13 +259,20 @@ class StudioController
             $segment['script']=trim((string)($v['parts'][$i]??''));
         unset($segment);
         $combined=StoryboardTable::combine($segments);
-        if(mb_strlen($combined)>100000)
+        if(mb_strlen($combined)>100000) {
+            if($request->expectsJson())
+                return response()->json(['message'=>'完整剧本超过 100000 字符，请缩短分段剧本。'],422);
             return redirect()->to(route('project.show',$id).'#script-segments')
                 ->withErrors(['parts'=>'完整剧本超过 100000 字符，请缩短分段剧本。']);
+        }
         DB::table('projects')->where('id',$id)->update([
             'script'=>$combined,'storyboard_dirty'=>false,
             'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
             'updated_at'=>now(),
+        ]);
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>'逐镜剧本已保存并同步到完整剧本',
+            'script'=>$combined,'has_script'=>true,
         ]);
         return redirect()->to(route('project.show',$id).'#script-segments')->with('ok','逐镜剧本已保存并同步到完整剧本');
     }
@@ -451,6 +461,10 @@ class StudioController
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>'镜头已保存',
+            'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
+        ]);
         return redirect()->to(route('project.show',$id).'#shot-'.$shot)->with('ok','镜头已保存');
     }
     public function prompt(int $id,int $shot,Request $request,PromptBuilder $builder) {
