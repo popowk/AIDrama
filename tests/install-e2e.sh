@@ -133,10 +133,29 @@ curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/logo-upload.headers" \
 grep -qi '^Location:' "$RUNNER_TEMP/logo-upload.headers"
 curl -fsS -b "$COOKIE" "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/file" -o "$RUNNER_TEMP/private-logo.png"
 test -s "$RUNNER_TEMP/private-logo.png"
+# Compact cached private thumbnails must not expose assets anonymously.
+curl -fsS -b "$COOKIE" "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/thumbnail" -o "$RUNNER_TEMP/client-logo-thumb"
+php -r '$i=getimagesize($argv[1]);if(!$i || $i[0]>320 || $i[1]>320)exit(1);' "$RUNNER_TEMP/client-logo-thumb"
+THUMB_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/thumbnail")"
+test "$THUMB_ANON_CODE" = "302"
+# Actual download endpoint sets server-enforced attachment and a UTF-8 asset
+# title (not a random 32-character storage name).
+curl -fsS -b "$COOKIE" -D "$RUNNER_TEMP/logo-download.headers" \
+  "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/download" \
+  -o "$RUNNER_TEMP/client-logo-download"
+cmp "$RUNNER_TEMP/private-logo.png" "$RUNNER_TEMP/client-logo-download"
+grep -qi '^content-disposition: attachment' "$RUNNER_TEMP/logo-download.headers"
+grep -qi 'filename\*=utf-8' "$RUNNER_TEMP/logo-download.headers"
+DOWNLOAD_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/download")"
+test "$DOWNLOAD_ANON_CODE" = "302"
 FILE_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$ASSET_ID/file")"
 test "$FILE_ANON_CODE" = "302"
 curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-with-logo.html"
 grep -q '已上传真实参考图' "$RUNNER_TEMP/project-with-logo.html"
+grep -q 'asset-download-button' "$RUNNER_TEMP/project-with-logo.html"
+grep -q 'asset-lightbox' "$RUNNER_TEMP/project-with-logo.html"
+grep -q '/thumbnail' "$RUNNER_TEMP/project-with-logo.html"
+echo "Private thumbnail, modal preview and UTF-8 asset-name download passed"
 # Exercise authenticated AI-image endpoint and ensure its error is machine-readable.
 SCENE_ID="$(php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("INSERT INTO assets (project_id,type,name,description,source_kind,image_status,created_at,updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())");$s->execute([(int)$argv[1],"scene","普通庭院","空旷的庭院","generate","pending"]);echo $p->lastInsertId();' "$PROJECT_ID")"
 curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-with-scene.html"
