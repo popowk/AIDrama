@@ -12,7 +12,7 @@
 <option value="{{ $key }}" @selected($key==='guofeng_3d')>{{ $entry['label'] }} · {{ $entry['category']??'风格' }}</option>
 @endforeach
 </select></label>
-<label>统一画风（可修改）<input name="style" id="new-project-style-name" value="3D国风动画" maxlength="191" required></label>
+<label id="new-project-custom-style" hidden>自定义画风名称<input name="style" id="new-project-style-name" value="" maxlength="191" placeholder="例如：原创武侠3D动画" disabled></label>
 </div>
 <p id="new-project-style-summary" class="hint">可选具体视觉风格描述，生图时自动加入镜头、光线和材质指令；你也可以手动修改名称。</p>
 <div class="inline-fields">
@@ -48,8 +48,15 @@ const newStyleOptions=@json(collect($stylePresets)->map(fn($entry)=>['label'=>$e
 document.getElementById('new-project-style-preset')?.addEventListener('change',event=>{
   const selected=newStyleOptions[event.target.value];
   if(!selected)return;
-  if(event.target.value!=='custom')document.getElementById('new-project-style-name').value=selected.label;
-  document.getElementById('new-project-style-summary').textContent=selected.summary||'使用自定义画风描述。';
+  const isCustom=event.target.value==='custom';
+  const label=document.getElementById('new-project-custom-style');
+  const input=document.getElementById('new-project-style-name');
+  label.hidden=!isCustom;
+  input.disabled=!isCustom;
+  input.required=isCustom;
+  document.getElementById('new-project-style-summary').textContent=isCustom
+    ?'使用自定义画风，请填写名称；其他风格会自动使用库中的名称和详细提示词。'
+    :(selected.summary||'选定后自动应用此风格的详细描述，无需手工填写画风。');
 });
 </script>
 @endsection
