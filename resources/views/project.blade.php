@@ -142,29 +142,16 @@
 <form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset" data-inline-save="asset-prompt-reset">@csrf
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>恢复使用类别提示词</button></form>
 </details>
-<div class="asset-buttons">
-<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
-@csrf
-<label class="small">该资产画幅（覆盖项目默认）
-<select name="frame_ratio" @disabled($a->image_status==='generating')>
-<option value="inherit" @selected(($a->frame_ratio??'inherit')==='inherit')>沿用项目默认 · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }}</option>
-<option value="landscape" @selected(($a->frame_ratio??'inherit')==='landscape')>横屏 16:9</option>
-<option value="portrait" @selected(($a->frame_ratio??'inherit')==='portrait')>竖屏 9:16</option>
-<option value="square" @selected(($a->frame_ratio??'inherit')==='square')>方形 1:1</option>
-</select></label>
-<button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
-</form>
 @if($a->source_kind==='upload')
+<div class="asset-buttons">
 <form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload" data-inline-save="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
-</form>
-@else
-<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+</form></div>
 @endif
 </div>
-</div>
 <div class="asset-preview">
+<div class="asset-preview-visual">
 @if($a->file_path)
 <button type="button" class="asset-preview-trigger"
     data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}"
@@ -181,6 +168,24 @@
 <div class="asset-placeholder">{{ $a->source_kind==='upload'?'等待客户上传':'等待生成图片' }}</div>
 @endif
 </div>
+<div class="asset-preview-controls">
+<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
+@csrf
+<label class="small">图片画幅
+<select name="frame_ratio" data-saved-value="{{ $a->frame_ratio??'inherit' }}" @disabled($a->image_status==='generating'||$project->status==='generating'||$a->is_archived)>
+<option value="inherit" @selected(($a->frame_ratio??'inherit')==='inherit')>项目默认 · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }}</option>
+<option value="landscape" @selected(($a->frame_ratio??'inherit')==='landscape')>横屏 16:9</option>
+<option value="portrait" @selected(($a->frame_ratio??'inherit')==='portrait')>竖屏 9:16</option>
+<option value="square" @selected(($a->frame_ratio??'inherit')==='square')>方形 1:1</option>
+</select></label>
+<span class="asset-ratio-indicator" role="status" aria-live="polite"></span>
+</form>
+@if($a->source_kind!=='upload')
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+@endif
+</div>
+</div>
+
 </div>
   </div>
 </div>
@@ -212,7 +217,7 @@
 <label>口播/台词（同一框可多人轮流说）
 <textarea rows="4" name="dialogue" placeholder="悟空：二师兄，看俺这个！&#10;八戒：这东西可真省心。">{{ $shot->dialogue }}</textarea>
 <small class="muted">多人对白请每行写“人物名：台词”，保留先后顺序；同一镜头可边动作边对话。</small></label></div>
-<div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
+<div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="conversation" @selected($shot->delivery==='conversation')>人物之间对话（看向对方）</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
@@ -533,6 +538,14 @@ async function toggleAssetFold(form){
     shell.classList.toggle('is-archived',archived);
     const body=shell.querySelector('.asset-fold-body');
     if(body)body.hidden=archived;
+    // A card restored without reloading must re-enable controls that were
+    // initially disabled on the server because the card was folded.
+    const assetCard=shell.querySelector('.asset-media');
+    const canEdit=!archived&&!projectIsGenerating&&assetCard?.dataset.pending!=='1';
+    const ratioField=shell.querySelector('.asset-ratio-form select[name="frame_ratio"]');
+    if(ratioField)ratioField.disabled=!canEdit;
+    const generateButton=shell.querySelector('.asset-generate');
+    if(generateButton)generateButton.disabled=!canEdit;
     const foldLabel=shell.querySelector('.asset-fold-label');
     if(foldLabel)foldLabel.textContent=archived?'已折叠 · 不参与生图':'';
     form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
@@ -560,6 +573,33 @@ function inlineSaveMessage(form,message,failed){
   status.classList.toggle('is-success',!failed);
 }
 
+function showRatioNotice(form,message,state){
+  const indicator=form.querySelector('.asset-ratio-indicator');
+  if(!indicator)return;
+  clearTimeout(form._ratioNoticeTimer);
+  clearTimeout(form._ratioHideTimer);
+  indicator.textContent=message;
+  indicator.classList.toggle('is-error',state==='error');
+  indicator.classList.toggle('is-visible',Boolean(message));
+  if(state==='success'){
+    // A small confirmation tick is enough; remove it without shifting layout.
+    form._ratioNoticeTimer=setTimeout(()=>{
+      indicator.classList.remove('is-visible');
+      form._ratioHideTimer=setTimeout(()=>{indicator.textContent='';},220);
+    },1800);
+  }
+}
+
+document.addEventListener('change',event=>{
+  const field=event.target;
+  if(!(field instanceof HTMLSelectElement)||
+      !field.matches('.asset-ratio-form select[name="frame_ratio"]'))
+    return;
+  if(field.disabled||field.value===field.dataset.savedValue)return;
+  const form=field.form;
+  if(form)form.requestSubmit();
+});
+
 function siteRoute(url){
   if(!url)return null;
   try{
@@ -571,7 +611,7 @@ function updateAssetPreview(id,result){
   if(!result?.image_url||!result?.thumbnail_url||!result?.download_url)return;
   const shell=document.getElementById('asset-shell-'+id);
   const card=document.getElementById('asset-'+id);
-  const preview=card?.querySelector('.asset-preview');
+  const preview=card?.querySelector('.asset-preview-visual');
   if(!shell||!preview)return;
   const imageUrl=siteRoute(result.image_url);
   const thumbnailUrl=siteRoute(result.thumbnail_url);
@@ -617,10 +657,17 @@ document.addEventListener('submit',async event=>{
   if(!kind)return;
   event.preventDefault();
   const submit=form.querySelector('button[type="submit"]');
+  const ratioField=kind==='asset-ratio'
+    ?form.querySelector('select[name="frame_ratio"]'):null;
   if(submit)submit.disabled=true;
-  inlineSaveMessage(form,'正在保存…',false);
+  if(ratioField)showRatioNotice(form,'保存中…','pending');
+  else inlineSaveMessage(form,'正在保存…',false);
   try{
-    const result=await sendInlineForm(form);
+    // FormData is collected synchronously before disabling the selector;
+    // otherwise browsers omit the selected value from the POST.
+    const pending=sendInlineForm(form);
+    if(ratioField)ratioField.disabled=true;
+    const result=await pending;
     const shell=form.closest('.asset-fold-card');
     const card=form.closest('.shot-card');
     if(kind==='asset-prompt'||kind==='asset-prompt-reset'){
@@ -633,6 +680,7 @@ document.addEventListener('submit',async event=>{
       if(summary)summary.textContent=result.prompt_override
         ?'编辑手动生图提示词（单资产覆盖中）':'查看 / 编辑生图提示词（使用类别模板）';
     }else if(kind==='asset-ratio'){
+      if(ratioField)ratioField.dataset.savedValue=String(result.frame_ratio??ratioField.value);
       const field=shell?.querySelector('.asset-prompt-form textarea');
       if(field && !result.prompt_override &&
         field.value===(field.dataset.lastSavedPrompt??field.defaultValue)){
@@ -659,10 +707,17 @@ document.addEventListener('submit',async event=>{
       const prompt=card.querySelector('.prompt-output');
       if(prompt)prompt.value='';
     }
-    inlineSaveMessage(form,result.message||'保存成功',false);
+    if(ratioField)showRatioNotice(form,'✓','success');
+    else inlineSaveMessage(form,result.message||'保存成功',false);
   }catch(error){
-    inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
-  }finally{if(submit)submit.disabled=false;}
+    if(ratioField){
+      ratioField.value=ratioField.dataset.savedValue||'inherit';
+      showRatioNotice(form,'保存失败，请重试','error');
+    }else inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
+  }finally{
+    if(submit)submit.disabled=false;
+    if(ratioField)ratioField.disabled=false;
+  }
 });
 
 document.querySelectorAll('.asset-prompt-form textarea').forEach(field=>{

@@ -59,12 +59,12 @@ class StoryboardEngine
           "，".FrameProfile::prompt($this->frameRatio)."；每镜最长：{$limit}秒；创作类型偏好：{$mode}（auto 为模型识别）。\n".
           "script_mode 只能 talking 或 mixed：talking 表示主要对镜头讲话的纯口播；mixed 表示画面文案、情节/产品展示配合口播或画外音。\n".
           "镜头字段：title, visual, dialogue, action_before, estimated_seconds, on_screen_text, delivery。".
-          "on_screen_text 是画面中应显示的文字；delivery 为 on_camera、voiceover 或 none。\n".
+          "delivery 必须逐镜根据角色说话对象选择：conversation=人物之间自然对话（看向彼此、边做动作边说话），on_camera=人物面对镜头向观众口播，voiceover=画外音/旁白，none=无台词。不要把角色互相交流误标为 on_camera。on_screen_text 是可选画面文案，短视频不要字幕。\n".
           "镜头可选字段 scene：连续地点布景的固定名称；同场景多个镜头使用完全一致的 scene。对白允许多个说话人，dialogue 同一字段逐行标注‘人物：台词’，不得更改顺序。\n".
           "角色、场景和道具字段：type (character|scene|prop), name, description, voice_description, source_kind (upload|generate)。".
           "Logo、品牌标识、真实产品和具体型号/包装等 source_kind 必须是 upload，并独立列入资产；其他可生成的人物、非品牌场景与道具为 generate。\n".
           "仅输出 JSON：".
-          '{"script_mode":"talking|mixed","shots":[{"title":"镜头","scene":"场景名","visual":"画面动作","dialogue":"悟空：台词\\n八戒：台词","action_before":"必须先做的动作或空","on_screen_text":"画面文案或空","delivery":"on_camera|voiceover|none","estimated_seconds":8}],'.
+          '{"script_mode":"talking|mixed","shots":[{"title":"镜头","scene":"场景名","visual":"画面动作","dialogue":"悟空：台词\\n八戒：台词","action_before":"必须先做的动作或空","on_screen_text":"画面文案或空","delivery":"on_camera|conversation|voiceover|none","estimated_seconds":8}],'.
           '"assets":[{"type":"character|scene|prop","name":"名称","description":"外观","voice_description":"人物声音","source_kind":"upload|generate"}]}'.
           "\n台词和动作按发生顺序，禁止添加剧本中未出现的角色，不要遗漏原稿。\n剧本：\n".$script;
         $res=Http::withToken($apiKey)->acceptJson()->asJson()
@@ -122,9 +122,10 @@ class StoryboardEngine
                 $pre='';
             }
             $onScreen=$short?'':mb_substr(trim((string)($item['on_screen_text']??'')),0,5000);
-            $delivery=(string)($item['delivery']??($mode==='talking'?'on_camera':'voiceover'));
-            if(!in_array($delivery,['on_camera','voiceover','none'],true))
-                $delivery=$mode==='talking'?'on_camera':'voiceover';
+            $delivery=ShotDelivery::normalize(
+                $item['delivery']??null,$dialogue,$visual,
+                $mode==='talking'?'on_camera':'voiceover'
+            );
             $estimated=max(3,min(300,(int)($item['estimated_seconds']??6)));
             // For speaking shots reserve a little time for pre-dialogue movements.
             // 3.5 Chinese characters/sec is an editable planning estimate, not audio measurement.
