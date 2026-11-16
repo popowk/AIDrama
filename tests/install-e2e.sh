@@ -85,6 +85,8 @@ grep -q 'AIDrama' "$RUNNER_TEMP/login-readonly-release.html"
 test -s "$PRIVATE_BOOTSTRAP/packages.php"
 test -s "$PRIVATE_BOOTSTRAP/services.php"
 echo "Read-only release with no bootstrap/cache booted successfully"
+# Restore CI fixture permissions so later delete/recovery test can unlink it.
+chmod -R u+w "$APP_DIR/bootstrap"
 (cd "$APP_DIR" && php artisan config:cache)
 php -r '$cfg=require $argv[1];$ps=$cfg["app"]["providers"]??[];if(!in_array(\Illuminate\View\ViewServiceProvider::class,$ps,true)||!in_array(\Illuminate\Session\SessionServiceProvider::class,$ps,true)){fwrite(STDERR,"Missing Laravel default providers in config cache\n");exit(1);}' "$PRIVATE_BOOTSTRAP/config.php"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/login > "$RUNNER_TEMP/login-with-cached-config.html"
