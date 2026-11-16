@@ -239,6 +239,7 @@ class StudioController
             'textHasKey'=>!empty($rows['ai.text.api_key']??$rows['ai.api_key']??null),
             'imageApiBase'=>$rows['ai.image.api_base']??'https://api.openai.com/v1',
             'imageModel'=>$rows['ai.image.model']??'',
+            'imageDelivery'=>$rows['ai.image.delivery']??'chatgpt2api_tasks',
             'imageHasKey'=>!empty($rows['ai.image.api_key']??null),
             'prompts'=>$prompts,
         ]);
@@ -263,6 +264,7 @@ class StudioController
             'api_base'=>'required|url|starts_with:https://|max:250',
             'model'=>'required|string|max:191',
             'api_key'=>'nullable|string|max:2000',
+            'delivery'=>['nullable',Rule::in(['chatgpt2api_tasks','openai_sync'])],
         ]);
         $parts=parse_url($v['api_base']);
         $host=strtolower((string)($parts['host']??''));
@@ -275,7 +277,9 @@ class StudioController
         $type=$v['kind'];
         $prefix='ai.'.$type.'.';
         DB::transaction(function() use ($v,$prefix) {
-            foreach(['api_base'=>$v['api_base'],'model'=>$v['model']] as $k=>$value)
+            $fields=['api_base'=>$v['api_base'],'model'=>$v['model']];
+            if($v['kind']==='image')$fields['delivery']=$v['delivery']??'chatgpt2api_tasks';
+            foreach($fields as $k=>$value)
                 DB::table('settings')->updateOrInsert(['key'=>$prefix.$k],[
                     'value'=>$value,'updated_at'=>now(),
                 ]);
