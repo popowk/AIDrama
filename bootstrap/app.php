@@ -18,6 +18,20 @@ if($installed) {
     if(!is_writable($cacheDir))
         throw new \RuntimeException('Laravel 私有启动缓存目录不可写，请检查 shared/storage 的 www 写入权限');
 
+    // Recover automatically if a previously generated config cache has an
+    // incomplete provider registry (the cause of earlier blank login pages).
+    $configCache=$cacheDir.'/config.php';
+    if(is_file($configCache)) {
+        $config=@include $configCache;
+        $providers=is_array($config)?($config['app']['providers']??[]):[];
+        if(!is_array($providers) ||
+            !in_array(\Illuminate\View\ViewServiceProvider::class,$providers,true)) {
+            if(!@unlink($configCache))
+                throw new \RuntimeException('Laravel 配置缓存已损坏且不可清理，请检查 shared/storage 写入权限');
+            if(function_exists('opcache_invalidate'))@opcache_invalidate($configCache,true);
+        }
+    }
+
     // Laravel 13 resolves these via Illuminate\Support\Env. Set both default
     // environment adapters before Application::configure registers services.
     // Never store cache files under public/ or inside the versioned release.
