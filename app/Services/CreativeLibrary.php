@@ -114,12 +114,12 @@ class CreativeLibrary
         ],
     ];
 
-    public static function styles():array{return self::STYLES;}
-    public static function skills():array{return self::SKILLS;}
+    public static function styles():array{return (new LibraryUpdater())->activeItems('styles');}
+    public static function skills():array{return (new LibraryUpdater())->activeItems('skills');}
 
     public static function stylePrompt(?string $key):string
     {
-        return (string)(self::STYLES[$key??'custom']['prompt']??'');
+        return (string)(self::styles()[$key??'custom']['prompt']??'');
     }
 
     public static function skillIds(mixed $value):array
@@ -127,14 +127,14 @@ class CreativeLibrary
         if(is_string($value))$value=json_decode($value,true);
         if(!is_array($value))return [];
         return array_values(array_unique(array_filter($value,
-            static fn($id)=>is_string($id)&&array_key_exists($id,self::SKILLS))));
+            static fn($id)=>is_string($id)&&array_key_exists($id,self::skills()))));
     }
 
     public static function skillPrompt(mixed $value,string $stage):string
     {
         $text=[];
         foreach(self::skillIds($value) as $id) {
-            $entry=self::SKILLS[$id];
+            $entry=self::skills()[$id];
             if(in_array($stage,$entry['stages'],true))$text[]=$entry['prompt'];
         }
         return implode("\n",$text);
