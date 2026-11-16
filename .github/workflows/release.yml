@@ -52,6 +52,11 @@ jobs:
           rm -f database/database.sqlite
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php artisan migrate --force
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/storyboard-async-smoke.php
+          # Simulate MySQL 5.7's nontransactional DDL: previous upgrade
+          # added most columns but crashed before recording the migration.
+          php -r '$d=new PDO("mysql:host=127.0.0.1;dbname=aidrama_ci","root","aidrama-ci-only");$d->exec("ALTER TABLE assets DROP COLUMN image_error");$d->exec("ALTER TABLE shots DROP COLUMN delivery");$d->exec("DELETE FROM migrations WHERE migration = '\''2026_11_16_000002_add_media_pipeline_columns'\''");'
+          DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php artisan migrate --force
+          php -r '$d=new PDO("mysql:host=127.0.0.1;dbname=aidrama_ci","root","aidrama-ci-only");foreach(["assets"=>["source_kind","image_status","image_error"],"shots"=>["delivery","on_screen_text"],"projects"=>["script_mode","detected_mode"],"generation_jobs"=>["request_mode"]] as $table=>$cols){foreach($cols as $col){$s=$d->prepare("SHOW COLUMNS FROM ".$table." LIKE ?");$s->execute([$col]);if(!$s->fetch()){fwrite(STDERR,"Missing ".$table.".".$col."\n");exit(1);}}}echo "Partial-migration retry on MySQL 5.7 passed\n";'
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/media-pipeline-smoke.php
           php artisan route:list --path=updates
           php artisan route:list --path=projects
