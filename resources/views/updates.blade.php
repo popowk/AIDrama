@@ -111,19 +111,20 @@ const libraryRows={};
 document.querySelectorAll('[data-library]').forEach(row=>{
   libraryRows[row.dataset.library]=row;
 });
-async function checkLibraryVersions(){
-  for(const row of Object.values(libraryRows)){
+async function checkLibraryVersions(only=null){
+  const rows=only?[libraryRows[only]].filter(Boolean):Object.values(libraryRows);
+  for(const row of rows){
     row.querySelector('.library-status').textContent='正在连接 GitHub…';
     row.querySelector('.library-apply').disabled=true;
     row.querySelector('.library-check').disabled=true;
   }
   try{
-    const response=await fetch(endpointLibraryCheck,{
+    const response=await fetch(endpointLibraryCheck+(only?'?kind='+encodeURIComponent(only):''),{
       credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'
     });
     const body=await response.json();
     if(!response.ok)throw new Error(body.error||'无法检查素材库更新');
-    for(const kind of ['styles','skills']){
+    for(const kind of (only?[only]:['styles','skills'])){
       const row=libraryRows[kind],info=body[kind];
       if(!row||!info)continue;
       row.querySelector('.library-current').textContent=info.current||'—';
@@ -132,19 +133,19 @@ async function checkLibraryVersions(){
         (info.available?'发现新版本':'已是最新版本');
       row.querySelector('.library-apply').disabled=!info.available;
     }
-    libraryNotice.textContent='风格库和技能库版本检查完成，可单独选择更新。';
+    libraryNotice.textContent=(only==='styles'?'风格库':only==='skills'?'技能库':'风格库和技能库')+'版本检查完成。';
   }catch(e){
     libraryNotice.textContent='库版本检查失败：'+(e.message||String(e));
-    for(const row of Object.values(libraryRows))
+    for(const row of rows)
       row.querySelector('.library-status').textContent='暂时无法检查';
   }finally{
-    for(const row of Object.values(libraryRows))
+    for(const row of rows)
       row.querySelector('.library-check').disabled=false;
   }
 }
 checkBtn.addEventListener('click',()=>checkLibraryVersions());
 for(const row of Object.values(libraryRows)){
-  row.querySelector('.library-check').addEventListener('click',()=>checkLibraryVersions());
+  row.querySelector('.library-check').addEventListener('click',()=>checkLibraryVersions(row.dataset.library));
   row.querySelector('.library-apply').addEventListener('click',async event=>{
     const kind=event.currentTarget.dataset.kind;
     const label=kind==='styles'?'视觉风格库':'创作技能库';
