@@ -13,12 +13,13 @@ final class ShotDelivery
     public static function normalize(mixed $value,string $dialogue='',string $visual='',string $fallback='voiceover'):string
     {
         $delivery=is_string($value)?trim($value):'';
-        if(!in_array($delivery,self::OPTIONS,true))
+        $explicit=in_array($delivery,self::OPTIONS,true);
+        if(!$explicit)
             $delivery=in_array($fallback,self::OPTIONS,true)?$fallback:'voiceover';
 
-        // Respect explicit voiceover and silence. Only automatically classify
-        // camera speech as natural conversation when the shot itself proves it.
-        if($delivery!=='on_camera'||trim($dialogue)==='')
+        // Respect explicit voiceover and silence, but infer conversation when
+        // the model omitted or misclassified the delivery value entirely.
+        if(($explicit&&$delivery!=='on_camera')||trim($dialogue)==='')
             return $delivery;
         if(preg_match('/(?:面向|面对|正对|对着|看向|直视)\s*镜头|对镜头讲话|向观众讲述/u',$visual))
             return 'on_camera';
