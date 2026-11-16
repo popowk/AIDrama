@@ -20,7 +20,12 @@ class PromptBuilder
             'voiceover'=>'画外音 / 旁白','none'=>'无台词','on_camera'=>'角色面对镜头说话',
             default=>'角色面对镜头说话',
         };
-        $body="项目风格：{$project->style}\n创作方式：{$modeName}\n".
+        $frame=(string)($project->frame_ratio??'landscape');
+        $visualSkills=CreativeLibrary::projectContext($project,'video');
+        $body="项目风格：{$project->style}\n画面比例：".FrameProfile::label($frame).
+            "，".FrameProfile::prompt($frame)."\n".
+            ($visualSkills!==''?"风格与技能：".$visualSkills."\n":'').
+            "创作方式：{$modeName}\n".
             "镜头 {$shot->sequence}：{$shot->title}\n画面与运动：{$shot->visual}\n".
             ($shot->action_before?"先完成：{$shot->action_before}\n":'').
             ($shot->dialogue?"{$voice}：{$shot->dialogue}\n":'').
