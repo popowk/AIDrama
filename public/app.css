@@ -162,3 +162,16 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .inline-save-feedback.is-error{color:#ffb4bd}
 .inline-save-feedback.is-success{color:#9cddb9}
 @media(max-width:540px){.asset-fold-header{align-items:flex-start}.asset-fold-heading{flex:1}.asset-fold-action .button{padding:7px 9px}}
+
+/* Assets: preview and rapid image actions share the right-hand column. */
+.asset-preview-visual{width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+.asset-preview-visual .asset-download-button{width:100%}
+.asset-preview-controls{display:flex;flex-direction:column;gap:10px;width:100%;min-width:0;margin-top:8px}
+.asset-preview-controls .asset-ratio-form{display:block;position:relative;width:100%;margin:0;min-width:0}
+.asset-preview-controls .asset-ratio-form label{display:block;min-width:0;width:100%;padding-right:0;font-weight:600}
+.asset-preview-controls .asset-ratio-form select{display:block;width:100%;max-width:100%;min-width:0;margin:5px 0 0;padding:9px 7px;font-size:12px}
+.asset-preview-controls .asset-generate{width:100%;min-width:0;white-space:normal;text-align:center;font-size:12px;line-height:1.35;padding:10px 7px}
+.asset-ratio-indicator{position:absolute;right:0;top:0;opacity:0;transition:opacity 180ms ease;pointer-events:none;color:#86e5b0;font-size:12px;font-weight:700;white-space:nowrap}
+.asset-ratio-indicator.is-visible{opacity:1}
+.asset-ratio-indicator.is-error{color:#ffb4bd;position:static;display:block;white-space:normal;line-height:1.35;padding-top:5px}
+@media(max-width:540px){.asset-preview-controls{gap:8px}.asset-preview-controls .asset-ratio-form select{font-size:11px}.asset-preview-controls .asset-generate{font-size:11px}}
