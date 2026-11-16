@@ -24,7 +24,7 @@ class StudioController
     public function create(Request $request) {
         $v=$request->validate([
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
-            'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
+            'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
             'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
@@ -32,12 +32,20 @@ class StudioController
             'skill_keys'=>'sometimes|array|max:8',
             'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
+        $preset=$v['style_preset']??(isset($v['style'])?'custom':'guofeng_3d');
+        $style=$preset==='custom'
+            ?trim((string)($v['style']??''))
+            :(string)(CreativeLibrary::styles()[$preset]['label']??'');
+        if($style==='')
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'style'=>'选择自定义风格时，请填写画风名称。',
+            ]);
         $id=DB::table('projects')->insertGetId([
-            'name'=>$v['name'],'script'=>$v['script'],'style'=>$v['style'],
+            'name'=>$v['name'],'script'=>$v['script'],'style'=>$style,
             'shot_limit'=>(int)$v['shot_limit'],
             'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
             'frame_ratio'=>$v['frame_ratio']??'landscape',
-            'style_preset'=>$v['style_preset']??'custom',
+            'style_preset'=>$preset,
             'creative_skills'=>json_encode(CreativeLibrary::skillIds($v['skill_keys']??[])),
             'created_at'=>now(),'updated_at'=>now(),
         ]);
@@ -57,12 +65,12 @@ class StudioController
         return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills'));
     }
     public function update(Request $request,int $id) {
-        $this->project($id);
+        $project=$this->project($id);
         if(DB::table('projects')->where('id',$id)->value('status')==='generating')
             return back()->withErrors(['script'=>'模型正在处理剧本，请完成或重试任务后再修改。']);
         $v=$request->validate([
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
-            'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
+            'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
             'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::styles()))],
@@ -70,6 +78,16 @@ class StudioController
             'skill_keys'=>'sometimes|array|max:8',
             'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
+        $preset=$v['style_preset']??($project->style_preset??'custom');
+        $style=$preset==='custom'
+            ?trim((string)($v['style']??$project->style))
+            :(string)(CreativeLibrary::styles()[$preset]['label']??'');
+        if($style==='')
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'style'=>'选择自定义风格时，请填写画风名称。',
+            ]);
+        $v['style']=$style;
+        $v['style_preset']=$preset;
         $previousMax=DB::table('shots')->where('project_id',$id)->max('duration_seconds')??0;
         if ($previousMax>(int)$v['shot_limit']) return back()->withErrors(['shot_limit'=>'现有镜头超过选择的时长上限，请重新生成分镜。']);
         if(isset($v['skills_present']))
@@ -106,9 +124,12 @@ class StudioController
             DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
             return true;
         });
-        return back()->with('ok',$created
-            ? '已提交文本模型生成任务。页面会显示处理状态；模型响应较慢时无需重复点击。'
-            : '已有生成任务正在处理，请查看页面任务状态。');
+        // Use a stable fragment to defeat browser scroll restoration to the
+        // previous large asset preview after a POST/redirect/reload cycle.
+        return redirect()->to(route('project.show',$id).'#generation-state')
+            ->with('ok',$created
+                ? '已提交文本模型生成任务。页面会显示处理状态；模型响应较慢时无需重复点击。'
+                : '已有生成任务正在处理，请查看页面任务状态。');
     }
     public function generationStatus(int $id) {
         $project=$this->project($id);
