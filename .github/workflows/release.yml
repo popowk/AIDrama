@@ -59,6 +59,7 @@ jobs:
           php -r '$d=new PDO("mysql:host=127.0.0.1;dbname=aidrama_ci","root","aidrama-ci-only");foreach(["assets"=>["source_kind","image_status","image_error"],"shots"=>["delivery","on_screen_text"],"projects"=>["script_mode","detected_mode"],"generation_jobs"=>["request_mode"]] as $table=>$cols){foreach($cols as $col){$s=$d->prepare("SHOW COLUMNS FROM ".$table." LIKE ?");$s->execute([$col]);if(!$s->fetch()){fwrite(STDERR,"Missing ".$table.".".$col."\n");exit(1);}}}echo "Partial-migration retry on MySQL 5.7 passed\n";'
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/media-pipeline-smoke.php
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/library-smoke.php
+          DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/model-discovery-smoke.php
           php artisan route:list --path=updates
           php artisan route:list --path=projects
           # Smoke test the stand-alone browser bootstrap without secrets or an installed app
