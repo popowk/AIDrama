@@ -52,7 +52,7 @@
 <option value="custom" @selected($item['mode']==='custom')>我的自定义版</option>
 </select></label>
 <label>参考版提示词<textarea name="reference" rows="8" maxlength="25000" required>{{ $item['reference'] }}</textarea><span class="hint">修改后保存，即替换此分类的参考版提示词。</span></label>
-<label>自定义提示词<textarea name="custom" rows="8" maxlength="25000" placeholder="写入你自己的风格、分镜规范、镜头语言或素材约束…">{{ $item['custom'] }}</textarea><span class="hint">选择自定义模式后生效；空白时不能启用。</span></label>
+<label>自定义提示词<textarea name="custom" rows="8" maxlength="25000" placeholder="写入你自己的风格、分镜规范、镜头语言或素材约束…">{{ $item['custom'] }}</textarea><span class="hint">选择自定义模式后生效；可以留空，留空代表不附加这一类自定义提示词。</span></label>
 <button class="button primary" type="submit">保存并应用此类提示词</button>
 </form>
 <form method="post" action="{{ route('settings.prompts.reset',$kind) }}" class="prompt-reset" onsubmit="return confirm('恢复内置参考模板？自定义内容会保留，但当前生效模式改回参考版。')">@csrf
