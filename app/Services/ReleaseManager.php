@@ -263,6 +263,16 @@ class ReleaseManager
 
             if(!$newer)
                 return $this->finish($root,'done','当前版本缺失的数据表已补齐，项目数据已保留',$current);
+            // The new release must be able to build Laravel manifests even when
+            // releases/ is read-only to the PHP-FPM user. Preflight private
+            // per-release cache before switching the active marker.
+            $bootstrapCache=$root.'/shared/storage/framework/cache/bootstrap/'.$tag;
+            if(!is_dir($bootstrapCache) &&
+                !@mkdir($bootstrapCache,0750,true) &&
+                !is_dir($bootstrapCache))
+                throw new RuntimeException('无法创建新版 Laravel 私有缓存目录，已保留旧版');
+            if(!is_writable($bootstrapCache))
+                throw new RuntimeException('新版 Laravel 私有缓存不可写，已保留旧版');
             $this->setState($root,'activating','正在同步网站入口并切换正式版本',$tag);
             // Refresh the stable document-root entry on every approved update.
             // Stage outside public/ and atomically rename, so users never receive
