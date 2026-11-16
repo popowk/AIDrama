@@ -292,23 +292,109 @@ class AssetController
         ]);
     }
 
-    public function file(int $id,int $asset)
+    /**
+     * All image delivery endpoints share the same project-scoped private-path
+     * validation. Never read a filename from a request parameter.
+     */
+    private function storedImage(int $id,int $asset):array
     {
         [,$a]=$this->find($id,$asset);
-        if(!$a->file_path)abort(404);
-        $base='projects/'.$id.'/assets/';
-        if(!str_starts_with($a->file_path,$base)||
-            !preg_match('~^projects/[0-9]+/assets/[a-f0-9]{32}\.(png|jpg|webp)$~D',$a->file_path))
+        $relative=(string)($a->file_path??'');
+        $prefix='projects/'.$id.'/assets/';
+        if(!str_starts_with($relative,$prefix)||
+            !preg_match('~^projects/[0-9]+/assets/[a-f0-9]{32}\.(png|jpg|webp)$~D',$relative))
             abort(404);
         $storage=Storage::disk('local');
-        if(!$storage->exists($a->file_path))abort(404);
-        $path=$storage->path($a->file_path);
-        $mime=match(strtolower(pathinfo($path,PATHINFO_EXTENSION))) {
+        if(!$storage->exists($relative))abort(404);
+        $extension=strtolower(pathinfo($relative,PATHINFO_EXTENSION));
+        $mime=match($extension) {
             'jpg'=>'image/jpeg','png'=>'image/png','webp'=>'image/webp',
             default=>'application/octet-stream',
         };
+        return [$a,$storage->path($relative),$mime,$extension];
+    }
+
+    public function file(int $id,int $asset)
+    {
+        [,$path,$mime]=$this->storedImage($id,$asset);
         return response()->file($path,[
             'Content-Type'=>$mime,
+            'Content-Disposition'=>'inline',
+            'Cache-Control'=>'private, no-store',
+            'X-Content-Type-Options'=>'nosniff',
+        ]);
+    }
+
+    /**
+     * Download the full-resolution private asset, using the asset's own name.
+     * The server-generated Content-Disposition works in browsers that ignore
+     * the HTML download attribute or do not support non-ASCII names there.
+     */
+    public function download(int $id,int $asset)
+    {
+        [$a,$path,$mime,$extension]=$this->storedImage($id,$asset);
+        $name=trim((string)preg_replace('/[\\\\\/\x00-\x1F\x7F:*?"<>|]+/u','_', (string)$a->name));
+        $name=trim(mb_substr($name,0,90),'. ');
+        if($name==='')$name='资产-'.$asset;
+        $filename=$name.'.'.$extension;
+        $response=response()->file($path,[
+            'Content-Type'=>$mime,
+            'Cache-Control'=>'private, no-store',
+            'X-Content-Type-Options'=>'nosniff',
+        ]);
+        $response->setContentDisposition('attachment',$filename,'asset-'.$asset.'.'.$extension);
+        return $response;
+    }
+
+    /**
+     * Keep originals untouched. The first preview request builds an optional
+     * private 320px WebP thumbnail, which is cached by immutable source path.
+     * If GD cannot process the image safely, serve the original in the same
+     * visually constrained <img> element rather than failing the page.
+     */
+    public function thumbnail(int $id,int $asset)
+    {
+        [$a,$path,$mime]=$this->storedImage($id,$asset);
+        if(!function_exists('imagecreatefromstring')||!function_exists('imagewebp'))
+            return $this->file($id,$asset);
+
+        $info=@getimagesize($path);
+        if(!is_array($info) || ($info[0]??0)<1 || ($info[1]??0)<1 ||
+           $info[0]*$info[1]>12000000)
+            return $this->file($id,$asset);
+
+        $storage=Storage::disk('local');
+        $cache='thumbnails/'.hash('sha256',(string)$a->file_path).'-320.webp';
+        if(!$storage->exists($cache)) {
+            $source=@file_get_contents($path);
+            if(!is_string($source)||strlen($source)>20*1024*1024)
+                return $this->file($id,$asset);
+            $src=@imagecreatefromstring($source);
+            unset($source);
+            if($src===false)return $this->file($id,$asset);
+            $width=imagesx($src);
+            $height=imagesy($src);
+            $factor=min(1,320/max($width,$height));
+            $tw=max(1,(int)round($width*$factor));
+            $th=max(1,(int)round($height*$factor));
+            $thumb=imagecreatetruecolor($tw,$th);
+            if($thumb===false){imagedestroy($src);return $this->file($id,$asset);}
+            imagealphablending($thumb,false);
+            imagesavealpha($thumb,true);
+            $transparent=imagecolorallocatealpha($thumb,0,0,0,127);
+            imagefill($thumb,0,0,$transparent);
+            imagecopyresampled($thumb,$src,0,0,0,0,$tw,$th,$width,$height);
+            ob_start();
+            $saved=@imagewebp($thumb,null,78);
+            $bytes=ob_get_clean();
+            imagedestroy($thumb);
+            imagedestroy($src);
+            if(!$saved||!is_string($bytes)||strlen($bytes)<30||
+               !$storage->put($cache,$bytes))
+                return $this->file($id,$asset);
+        }
+        return response()->file($storage->path($cache),[
+            'Content-Type'=>'image/webp',
             'Content-Disposition'=>'inline',
             'Cache-Control'=>'private, no-store',
             'X-Content-Type-Options'=>'nosniff',
