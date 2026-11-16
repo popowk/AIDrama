@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "Install E2E failed around line $LINENO" >&2' ERR
 SMOKE="$RUNNER_TEMP/drama.tmd.pet"
 cp -a "$BUNDLE" "$SMOKE"
 # Must start with a pristine site; the ZIP may never ship any private state.
@@ -144,7 +145,7 @@ SCENE_HTTP="$(curl -sS -b "$COOKIE" -H "X-CSRF-TOKEN: $PROJECT_CSRF" -H 'Accept:
   -X POST "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$SCENE_ID/generate" \
   -o "$RUNNER_TEMP/scene-generation-error.json" -w '%{http_code}')"
 test "$SCENE_HTTP" = "422"
-php -r '$j=json_decode(file_get_contents($argv[1]),true);if(($j["status"]??"")!=="error"||empty($j["incident"])||!str_contains($j["error"]??"","图片 API"))exit(1);' "$RUNNER_TEMP/scene-generation-error.json"
+php -r '$j=json_decode(file_get_contents($argv[1]),true);if(($j["status"]??"")!=="error"||!str_contains($j["error"]??"","图片")||!str_contains($j["error"]??"","编号"))exit(1);' "$RUNNER_TEMP/scene-generation-error.json"
 echo "Image-generation request diagnostics and route-generated URLs passed"
 
 
