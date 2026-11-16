@@ -19,6 +19,14 @@
 <label>项目画幅
 <select name="frame_ratio"><option value="landscape" selected>横屏 16:9（默认）</option><option value="portrait">竖屏 9:16</option></select></label>
 <label>单镜头最长<select name="shot_limit"><option value="15" selected>15 秒（默认）</option><option value="30">30 秒</option></select></label>
+<label>视频创作模式<select name="video_mode">
+<option value="short" selected>短视频 · 紧凑节奏 / 合并同场景镜头（默认）</option>
+<option value="story">正常故事片 · 保持原叙事</option>
+</select></label>
+<label>背景音乐<select name="allow_background_music">
+<option value="0" selected>不生成背景音乐（默认）</option>
+<option value="1">允许背景音乐</option>
+</select></label>
 </div>
 <details class="creative-skill-picker"><summary>创作技能库（可选 · 按生成类型组合提示词）</summary>
 <input type="hidden" name="skills_present" value="1">
@@ -31,6 +39,7 @@
 @endforeach
 </div>
 </details>
+<p class="hint">短视频模式将优先安排角色边做动作边说话，并按时长合并同一场景内可连续的镜头；不自动生成字幕。</p>
 <label>创作形式<select name="script_mode"><option value="auto" selected>自动识别纯口播 / 文案＋口播</option><option value="talking">纯口播</option><option value="mixed">文案＋口播</option></select></label>
 <label>原稿类型<select name="input_kind" id="new-input-kind"><option value="script">完整剧本</option><option value="storyboard">已有分镜表格（先逐镜扩写剧本）</option></select></label>
 <div id="new-script-pane"><label>完整剧本<textarea name="script" rows="12" maxlength="100000" required placeholder="粘贴完整剧本、台词和场景描述"></textarea></label></div>
