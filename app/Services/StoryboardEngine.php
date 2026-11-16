@@ -9,6 +9,15 @@ use RuntimeException;
 class StoryboardEngine
 {
     private string $preferredMode='auto';
+    private string $frameRatio='landscape';
+    private string $stylePreset='custom';
+    private mixed $creativeSkills=null;
+    public function setCreativeContext(string $ratio,string $stylePreset,mixed $skills):void
+    {
+        $this->frameRatio=in_array($ratio,['landscape','portrait'],true)?$ratio:'landscape';
+        $this->stylePreset=array_key_exists($stylePreset,CreativeLibrary::STYLES)?$stylePreset:'custom';
+        $this->creativeSkills=$skills;
+    }
     public function setMode(string $mode):void {
         $this->preferredMode=in_array($mode,['auto','talking','mixed'],true)?$mode:'auto';
     }
@@ -33,10 +42,13 @@ class StoryboardEngine
             || filter_var($m[1],FILTER_VALIDATE_IP)) {
             throw new RuntimeException('API 地址仅接受公网 HTTPS 域名（不允许 IP、内网或重定向）');
         }
-        $skills=PromptPresets::active('script');
+        $skills=PromptPresets::active('script')."\n".
+            CreativeLibrary::stylePrompt($this->stylePreset)."\n".
+            CreativeLibrary::skillPrompt($this->creativeSkills,'script');
         $mode=$this->preferredMode;
         $prompt="请按完整剧本输出分镜、画面文案及人物、场景、道具清单。\n".
-          "风格：{$style}；每镜最长：{$limit}秒；创作类型偏好：{$mode}（auto 为模型识别）。\n".
+          "风格：{$style}；画幅：".FrameProfile::label($this->frameRatio).
+          "，".FrameProfile::prompt($this->frameRatio)."；每镜最长：{$limit}秒；创作类型偏好：{$mode}（auto 为模型识别）。\n".
           "script_mode 只能 talking 或 mixed：talking 表示主要对镜头讲话的纯口播；mixed 表示画面文案、情节/产品展示配合口播或画外音。\n".
           "镜头字段：title, visual, dialogue, action_before, estimated_seconds, on_screen_text, delivery。".
           "on_screen_text 是画面中应显示的文字；delivery 为 on_camera、voiceover 或 none。\n".
@@ -110,7 +122,8 @@ class StoryboardEngine
                     'dialogue'=>$part,'action_before'=>$partPre,
                     'on_screen_text'=>$onScreen,'delivery'=>$delivery,
                     'duration_seconds'=>$duration,
-                    'prompt'=>"画风：{$style}\n镜头：{$shotTitle}\n画面：{$visual}\n".
+                    'prompt'=>"画风：{$style}\n画幅：".FrameProfile::prompt($this->frameRatio).
+                        "\n镜头：{$shotTitle}\n画面：{$visual}\n".
                         ($partPre!==''?"先完成：{$partPre}\n":'').
                         ($part!==''?"对白：{$part}\n":'').
                         ($onScreen!==''?"画面文字：{$onScreen}\\n":'').
@@ -156,7 +169,7 @@ class StoryboardEngine
             $hint=(string)($asset['source_kind']??'');
             $source=AssetOrigin::needsUpload($type,$name,$desc,$hint)?'upload':'generate';
             $result[]=['type'=>$type,'name'=>$name,'description'=>$desc,
-                'source_kind'=>$source,'image_status'=>'pending',
+                'source_kind'=>$source,'image_status'=>'pending','frame_ratio'=>'inherit',
                 'voice_description'=>$type==='character'?(string)($asset['voice_description']??''):null,
                 'prompt'=>"{$style}，".($type==='character'?'人物三视图：正面、左侧面、背面，白色背景，完整全身，角色一致性。':($type==='scene'?'环境概念图，广角建立镜头，无人物：':'道具设计图，清晰产品细节：')).$name.'。'.$desc];
         }
