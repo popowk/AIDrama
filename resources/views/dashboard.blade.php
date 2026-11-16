@@ -32,7 +32,10 @@
 </div>
 </details>
 <label>创作形式<select name="script_mode"><option value="auto" selected>自动识别纯口播 / 文案＋口播</option><option value="talking">纯口播</option><option value="mixed">文案＋口播</option></select></label>
-<label>完整剧本<textarea name="script" rows="12" maxlength="100000" required placeholder="粘贴剧本、台词和场景描述。建好项目后点击「AI 生成分镜」..."></textarea></label>
+<label>原稿类型<select name="input_kind" id="new-input-kind"><option value="script">完整剧本</option><option value="storyboard">已有分镜表格（先逐镜扩写剧本）</option></select></label>
+<div id="new-script-pane"><label>完整剧本<textarea name="script" rows="12" maxlength="100000" required placeholder="粘贴完整剧本、台词和场景描述"></textarea></label></div>
+<div id="new-storyboard-pane" hidden><label>粘贴分镜表格<textarea name="storyboard_source" rows="12" maxlength="100000" placeholder="支持从 Excel 直接复制粘贴，也支持 Markdown 表格：镜号 | 画面 | 台词 | 画面字幕"></textarea></label>
+<p class="hint">支持镜号、画面、台词、画面字幕（可选时长）等列，最多 40 镜。建立项目后点击「AI 逐镜扩写剧本」，再生成正式分镜与资产。</p></div>
 <button class="button primary wide" type="submit">创建项目 →</button></form></section>
 <section class="panel"><div class="section-heading"><h2>最近的项目</h2><span class="muted">{{ $projects->total() }} 个</span></div>
 @if($projects->count())
@@ -44,6 +47,18 @@
 @else<div class="empty">目前还没有项目。左侧创建你的第一个剧本项目。</div>@endif
 </section></div>
 <script>
+const newKind=document.getElementById('new-input-kind');
+if(newKind){
+  const syncNewSource=()=>{
+    const isTable=newKind.value==='storyboard';
+    document.getElementById('new-script-pane').hidden=isTable;
+    document.getElementById('new-storyboard-pane').hidden=!isTable;
+    document.querySelector('#new-script-pane textarea').required=!isTable;
+    document.querySelector('#new-storyboard-pane textarea').required=isTable;
+  };
+  newKind.addEventListener('change',syncNewSource);
+  syncNewSource();
+}
 const newStyleOptions=@json(collect($stylePresets)->map(fn($entry)=>['label'=>$entry['label'],'summary'=>$entry['summary']??''])->all());
 document.getElementById('new-project-style-preset')?.addEventListener('change',event=>{
   const selected=newStyleOptions[event.target.value];
