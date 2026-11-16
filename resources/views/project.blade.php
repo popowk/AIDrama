@@ -145,7 +145,7 @@ async function generateAsset(button,project,id,refresh=true){
     httpStatus=res.status;
     stage='读取服务器响应';
     const type=(res.headers.get('content-type')||'').toLowerCase();
-    if(res.redirected && new URL(res.url).pathname==='/login')
+    if(res.redirected && /\/login(?:[?#]|$)/.test(res.url||''))
       throw new Error('登录状态已过期，请重新登录后生成');
     const body=await res.text();
     if(!type.includes('json'))
