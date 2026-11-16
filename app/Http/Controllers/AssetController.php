@@ -328,15 +328,32 @@ class AssetController
         return [$a,$storage->path($relative),$mime,$extension];
     }
 
+    /**
+     * Browser cache is private and versioned by the actual stored file path.
+     * ETags allow bandwidth-free 304 validation after seven days. Authentication
+     * is still enforced by the route middleware before cache revalidation.
+     */
+    private function cachedImage(string $path,string $mime):\Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $response=response()->file($path,[
+            'Content-Type'=>$mime,
+            'Content-Disposition'=>'inline',
+            'Cache-Control'=>'private, max-age=604800, must-revalidate',
+            'Vary'=>'Cookie',
+            'X-Content-Type-Options'=>'nosniff',
+        ]);
+        $modified=@filemtime($path)?:time();
+        $size=@filesize($path)?:0;
+        $response->setEtag(hash('sha256',$path.':'.$modified.':'.$size));
+        $response->setLastModified(new \DateTimeImmutable('@'.$modified));
+        $response->isNotModified(request());
+        return $response;
+    }
+
     public function file(int $id,int $asset)
     {
         [,$path,$mime]=$this->storedImage($id,$asset);
-        return response()->file($path,[
-            'Content-Type'=>$mime,
-            'Content-Disposition'=>'inline',
-            'Cache-Control'=>'private, no-store',
-            'X-Content-Type-Options'=>'nosniff',
-        ]);
+        return $this->cachedImage($path,$mime);
     }
 
     /**
@@ -407,11 +424,6 @@ class AssetController
                !$storage->put($cache,$bytes))
                 return $this->file($id,$asset);
         }
-        return response()->file($storage->path($cache),[
-            'Content-Type'=>'image/webp',
-            'Content-Disposition'=>'inline',
-            'Cache-Control'=>'private, no-store',
-            'X-Content-Type-Options'=>'nosniff',
-        ]);
+        return $this->cachedImage($storage->path($cache),'image/webp');
     }
 }
