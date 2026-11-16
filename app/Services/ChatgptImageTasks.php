@@ -78,7 +78,11 @@ class ChatgptImageTasks
         $config=$this->config();
         if(!preg_match('/^aidrama-[a-f0-9]{32}$/D',$taskId))
             throw new RuntimeException('无效的图片任务编号');
+        $frame=FrameProfile::effective($project,$asset);
+        $size=FrameProfile::requestSize($frame,$config['model']);
         $prompt=PromptPresets::active('image')."\n\n"
+            ."输出画幅：".FrameProfile::prompt($frame)."\n"
+            .CreativeLibrary::projectContext($project,'image')."\n"
             ."项目画风：{$project->style}\n资产类别：{$asset->type}\n"
             ."资产名称：{$asset->name}\n视觉设定：{$asset->description}\n"
             ."专业生图要求：统一角色与场景，不添加未说明的品牌、标识或文字。";
@@ -87,7 +91,7 @@ class ChatgptImageTasks
         $response=$this->client()->post($config['root'].'/api/image-tasks/generations',[
             'client_task_id'=>$taskId,
             'model'=>$config['model'],'prompt'=>$prompt,
-            'n'=>1,'size'=>'1024x1024','quality'=>'auto',
+            'n'=>1,'size'=>$size,'quality'=>'auto',
         ]);
         $this->error($response,'提交异步图片任务');
         $item=$response->json();
