@@ -14,7 +14,7 @@ const generate=card.indexOf('class="button outline asset-generate"');
 assert(preview>=0&&visual>preview&&ratio>visual&&generate>ratio,
   'Image ratio and generation must live in the right preview column');
 assert.equal((card.match(/name="frame_ratio"/g)||[]).length,1,'Exactly one ratio selector per asset');
-assert.equal((card.match(/class="asset-generate"/g)||[]).length,0,'Look for the real button selector');
+assert.equal((card.match(/class="button outline asset-generate"/g)||[]).length,1,'Exactly one image-generation button per AI asset');
 assert(card.includes('asset-ratio-indicator'),'Small inline save check is missing');
 assert(!card.includes('保存画幅'),'Explicit save button must be removed');
 assert(card.indexOf('class="asset-info"')<preview,'Asset details remain on the left');
