@@ -100,6 +100,13 @@ grep -q '图片模型' "$RUNNER_TEMP/models.html"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates > "$RUNNER_TEMP/updates.html"
 grep -q '检查更新' "$RUNNER_TEMP/updates.html"
 grep -q '一键更新' "$RUNNER_TEMP/updates.html"
+grep -q '风格库与技能库' "$RUNNER_TEMP/updates.html"
+grep -q 'data-library="styles"' "$RUNNER_TEMP/updates.html"
+grep -q 'data-library="skills"' "$RUNNER_TEMP/updates.html"
+# Version checks and apply endpoints must remain scoped to authorized admins.
+INVALID_LIBRARY_CODE="$(curl -sS -b "$COOKIE" -o /dev/null -w '%{http_code}' \
+  'http://127.0.0.1:18868/updates/libraries/check?kind=not_allowed')"
+test "$INVALID_LIBRARY_CODE" = "422"
 grep -q '提示词管理' "$RUNNER_TEMP/models.html"
 grep -q 'Seedance' "$RUNNER_TEMP/models.html"
 grep -q '可灵 Kling' "$RUNNER_TEMP/models.html"
@@ -114,6 +121,10 @@ curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/project-create.headers" \
   --data-urlencode 'style=3D国风动画' \
   --data-urlencode 'shot_limit=15' \
   --data-urlencode 'script_mode=mixed' \
+  --data-urlencode 'frame_ratio=portrait' \
+  --data-urlencode 'style_preset=guofeng_3d' \
+  --data-urlencode 'skills_present=1' \
+  --data-urlencode 'skill_keys[]=continuity' \
   http://127.0.0.1:18868/projects > "$RUNNER_TEMP/project-create.html"
 PROJECT_URL="$(sed -n 's/^[Ll]ocation: \(.*\/projects\/[0-9]*\).*/\1/p' "$RUNNER_TEMP/project-create.headers" | head -1 | tr -d '\r')"
 test -n "$PROJECT_URL"
@@ -121,6 +132,11 @@ curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-details.html"
 grep -q '创作形式' "$RUNNER_TEMP/project-details.html"
 grep -q '文案＋口播' "$RUNNER_TEMP/project-details.html"
 grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
+grep -q '项目画面比例' "$RUNNER_TEMP/project-details.html"
+grep -q '风格库' "$RUNNER_TEMP/project-details.html"
+grep -q '技能库' "$RUNNER_TEMP/project-details.html"
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("SELECT frame_ratio,style_preset,creative_skills FROM projects WHERE id=?");$s->execute([(int)$argv[1]]);$r=$s->fetch(PDO::FETCH_ASSOC);if(!$r||$r["frame_ratio"]!=="portrait"||$r["style_preset"]!=="guofeng_3d"||!in_array("continuity",json_decode($r["creative_skills"],true)??[],true))exit(1);' "${PROJECT_URL##*/}"
+echo "Project portrait ratio, selectable style preset and creative skill selections persisted"
 # Verify private client-product image upload, session gate, and preview.
 PROJECT_ID="${PROJECT_URL##*/}"
 ASSET_ID="$(php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("INSERT INTO assets (project_id,type,name,description,source_kind,image_status,created_at,updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())");$s->execute([(int)$argv[1],"prop","客户Logo","原始商标图","upload","pending"]);echo $p->lastInsertId();' "$PROJECT_ID")"
