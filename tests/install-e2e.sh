@@ -136,6 +136,17 @@ FILE_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:1886
 test "$FILE_ANON_CODE" = "302"
 curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-with-logo.html"
 grep -q '已上传真实参考图' "$RUNNER_TEMP/project-with-logo.html"
+# Exercise authenticated AI-image endpoint and ensure its error is machine-readable.
+SCENE_ID="$(php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("INSERT INTO assets (project_id,type,name,description,source_kind,image_status,created_at,updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())");$s->execute([(int)$argv[1],"scene","普通庭院","空旷的庭院","generate","pending"]);echo $p->lastInsertId();' "$PROJECT_ID")"
+curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-with-scene.html"
+grep -q "data-generate-url=\"/projects/$PROJECT_ID/assets/$SCENE_ID/generate\"" "$RUNNER_TEMP/project-with-scene.html"
+SCENE_HTTP="$(curl -sS -b "$COOKIE" -H "X-CSRF-TOKEN: $PROJECT_CSRF" -H 'Accept: application/json' \
+  -X POST "http://127.0.0.1:18868/projects/$PROJECT_ID/assets/$SCENE_ID/generate" \
+  -o "$RUNNER_TEMP/scene-generation-error.json" -w '%{http_code}')"
+test "$SCENE_HTTP" = "422"
+php -r '$j=json_decode(file_get_contents($argv[1]),true);if(($j["status"]??"")!=="error"||empty($j["incident"])||!str_contains($j["error"]??"","图片 API"))exit(1);' "$RUNNER_TEMP/scene-generation-error.json"
+echo "Image-generation request diagnostics and route-generated URLs passed"
+
 
 
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates/status > "$RUNNER_TEMP/update-state.json"
