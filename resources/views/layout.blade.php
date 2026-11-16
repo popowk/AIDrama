@@ -4,7 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>@yield('title','AIDrama') · AIDrama</title>
-<link rel="stylesheet" href="{{ asset('app.css') }}">
+<link rel="stylesheet" href="{{ asset('app.css') }}?v={{ rawurlencode(trim((string) @file_get_contents(base_path('VERSION')))) }}">
 </head>
 <body>
 <header class="header"><a href="{{ route('home') }}" class="brand"><span class="brand-icon">▣</span><span>AIDrama<small>AI 影视创作工作台</small></span></a>
