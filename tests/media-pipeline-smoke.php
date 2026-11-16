@@ -223,6 +223,53 @@ if($urlResult['status']!=='ready'||$downloadHits!==1)
 assertMedia($urlResult['status']==='ready'&&$downloadHits===1,'fetch native /images/ provider URL to private image asset');
 Storage::disk('local')->delete(DB::table('assets')->where('id',$urlScene)->value('file_path'));
 
+// chatgpt2api behind HTTP/reverse-proxy may advertise localhost:3000,
+// port 3000, http://same-host, or root-relative output URLs. These must be
+// rebased to our explicitly configured HTTPS host, never fetched as-is.
+Http::swap(new \Illuminate\Http\Client\Factory());
+$normalizedHits=0;
+$normalizedTarget='https://api.openai.com/images/2026/11/16/recovered.png';
+Http::fake(function($request) use (&$normalizedHits,$normalizedTarget,$pngBytes) {
+    if($request->url()===$normalizedTarget){
+        $normalizedHits++;
+        return Http::response($pngBytes,200,['Content-Type'=>'image/png']);
+    }
+    return Http::response('unexpected destination',503);
+});
+$adapter=new \App\Services\ChatgptImageTasks;
+foreach([
+    '/images/2026/11/16/recovered.png',
+    '//api.openai.com/images/2026/11/16/recovered.png',
+    'http://api.openai.com/images/2026/11/16/recovered.png',
+    'http://api.openai.com:3000/images/2026/11/16/recovered.png',
+    'http://localhost:3000/images/2026/11/16/recovered.png',
+    'http://127.0.0.1:3000/images/2026/11/16/recovered.png',
+    $normalizedTarget,
+] as $format){
+    $image=$adapter->image(['results'=>[['url'=>$format]]]);
+    assertMedia($image['extension']==='png'&&$image['data']===$pngBytes,
+        'known chatgpt2api published image URL variant must resolve to trusted HTTPS host');
+}
+assertMedia($normalizedHits===7,'all known origin variants fetched only from trusted HTTPS API');
+
+// Unknown public domains, dangerous schemes, path traversal and arbitrary
+// paths must be rejected BEFORE any HTTP request is made.
+$hitsBeforeRejects=$normalizedHits;
+foreach([
+    'http://attacker.example/images/2026/11/16/recovered.png',
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'http://localhost:3000/admin/config',
+    'http://localhost:3000/images/../../secret',
+    'http://localhost:3000/images/%2e%2e/private',
+] as $invalid){
+    $rejected=false;
+    try {$adapter->image(['results'=>[['url'=>$invalid]]]);}
+    catch(\RuntimeException $e){$rejected=true;}
+    assertMedia($rejected,'image link must reject unsafe or arbitrary URL');
+}
+assertMedia($normalizedHits===$hitsBeforeRejects,'unsafe URLs did not issue HTTP requests');
+
 // Hard security boundary: never fetch images from arbitrary remote hosts.
 $blockedUrl=false;
 try {(new \App\Services\ChatgptImageTasks())->image([
