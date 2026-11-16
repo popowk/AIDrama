@@ -56,7 +56,7 @@ $project=DB::table('projects')->where('id',$id)->first();
 $shot=DB::table('shots')->where('id',$shotId)->first();
 $prompt=(new PromptBuilder())->build($project,$shot,'kling');
 assertMedia(str_contains($prompt,'我自己的可灵镜头指令'),'Kling prompt custom text');
-assertMedia(!str_contains($prompt,'屏幕文案：4G监控') && str_contains($prompt,'不生成字幕'),'no captions in video prompt');
+assertMedia(!str_contains($prompt,'屏幕文案：4G监控') && str_contains($prompt,'不要生成字幕'),'no captions in video prompt');
 assertMedia(str_contains($prompt,'中维世纪K3C摄像头'),'brand upload warning');
 PromptPresets::reset('kling');
 assertMedia(PromptPresets::mode('kling')==='reference','reference reset');
