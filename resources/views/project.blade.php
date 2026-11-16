@@ -565,6 +565,33 @@ function inlineSaveMessage(form,message,failed){
   status.classList.toggle('is-success',!failed);
 }
 
+function showRatioNotice(form,message,state){
+  const indicator=form.querySelector('.asset-ratio-indicator');
+  if(!indicator)return;
+  clearTimeout(form._ratioNoticeTimer);
+  clearTimeout(form._ratioHideTimer);
+  indicator.textContent=message;
+  indicator.classList.toggle('is-error',state==='error');
+  indicator.classList.toggle('is-visible',Boolean(message));
+  if(state==='success'){
+    // A small confirmation tick is enough; remove it without shifting layout.
+    form._ratioNoticeTimer=setTimeout(()=>{
+      indicator.classList.remove('is-visible');
+      form._ratioHideTimer=setTimeout(()=>{indicator.textContent='';},220);
+    },1800);
+  }
+}
+
+document.addEventListener('change',event=>{
+  const field=event.target;
+  if(!(field instanceof HTMLSelectElement)||
+      !field.matches('.asset-ratio-form select[name="frame_ratio"]'))
+    return;
+  if(field.disabled||field.value===field.dataset.savedValue)return;
+  const form=field.form;
+  if(form)form.requestSubmit();
+});
+
 function siteRoute(url){
   if(!url)return null;
   try{
@@ -576,7 +603,7 @@ function updateAssetPreview(id,result){
   if(!result?.image_url||!result?.thumbnail_url||!result?.download_url)return;
   const shell=document.getElementById('asset-shell-'+id);
   const card=document.getElementById('asset-'+id);
-  const preview=card?.querySelector('.asset-preview');
+  const preview=card?.querySelector('.asset-preview-visual');
   if(!shell||!preview)return;
   const imageUrl=siteRoute(result.image_url);
   const thumbnailUrl=siteRoute(result.thumbnail_url);
@@ -622,10 +649,17 @@ document.addEventListener('submit',async event=>{
   if(!kind)return;
   event.preventDefault();
   const submit=form.querySelector('button[type="submit"]');
+  const ratioField=kind==='asset-ratio'
+    ?form.querySelector('select[name="frame_ratio"]'):null;
   if(submit)submit.disabled=true;
-  inlineSaveMessage(form,'正在保存…',false);
+  if(ratioField)showRatioNotice(form,'保存中…','pending');
+  else inlineSaveMessage(form,'正在保存…',false);
   try{
-    const result=await sendInlineForm(form);
+    // FormData is collected synchronously before disabling the selector;
+    // otherwise browsers omit the selected value from the POST.
+    const pending=sendInlineForm(form);
+    if(ratioField)ratioField.disabled=true;
+    const result=await pending;
     const shell=form.closest('.asset-fold-card');
     const card=form.closest('.shot-card');
     if(kind==='asset-prompt'||kind==='asset-prompt-reset'){
@@ -638,6 +672,7 @@ document.addEventListener('submit',async event=>{
       if(summary)summary.textContent=result.prompt_override
         ?'编辑手动生图提示词（单资产覆盖中）':'查看 / 编辑生图提示词（使用类别模板）';
     }else if(kind==='asset-ratio'){
+      if(ratioField)ratioField.dataset.savedValue=String(result.frame_ratio??ratioField.value);
       const field=shell?.querySelector('.asset-prompt-form textarea');
       if(field && !result.prompt_override &&
         field.value===(field.dataset.lastSavedPrompt??field.defaultValue)){
@@ -664,10 +699,17 @@ document.addEventListener('submit',async event=>{
       const prompt=card.querySelector('.prompt-output');
       if(prompt)prompt.value='';
     }
-    inlineSaveMessage(form,result.message||'保存成功',false);
+    if(ratioField)showRatioNotice(form,'✓','success');
+    else inlineSaveMessage(form,result.message||'保存成功',false);
   }catch(error){
-    inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
-  }finally{if(submit)submit.disabled=false;}
+    if(ratioField){
+      ratioField.value=ratioField.dataset.savedValue||'inherit';
+      showRatioNotice(form,'保存失败，请重试','error');
+    }else inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
+  }finally{
+    if(submit)submit.disabled=false;
+    if(ratioField)ratioField.disabled=false;
+  }
 });
 
 document.querySelectorAll('.asset-prompt-form textarea').forEach(field=>{
