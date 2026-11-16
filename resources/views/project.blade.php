@@ -538,6 +538,14 @@ async function toggleAssetFold(form){
     shell.classList.toggle('is-archived',archived);
     const body=shell.querySelector('.asset-fold-body');
     if(body)body.hidden=archived;
+    // A card restored without reloading must re-enable controls that were
+    // initially disabled on the server because the card was folded.
+    const assetCard=shell.querySelector('.asset-media');
+    const canEdit=!archived&&!projectIsGenerating&&assetCard?.dataset.pending!=='1';
+    const ratioField=shell.querySelector('.asset-ratio-form select[name="frame_ratio"]');
+    if(ratioField)ratioField.disabled=!canEdit;
+    const generateButton=shell.querySelector('.asset-generate');
+    if(generateButton)generateButton.disabled=!canEdit;
     const foldLabel=shell.querySelector('.asset-fold-label');
     if(foldLabel)foldLabel.textContent=archived?'已折叠 · 不参与生图':'';
     form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
