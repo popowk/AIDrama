@@ -244,6 +244,7 @@ $response=[
             'source_kind'=>'generate','voice_description'=>''],
     ],
 ];
+Http::swap(new \Illuminate\Http\Client\Factory());
 Http::fake(['https://api.openai.com/*'=>Http::response([
     'choices'=>[['message'=>['content'=>json_encode($response,JSON_UNESCAPED_UNICODE)]]],
 ],200)]);
