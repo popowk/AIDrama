@@ -153,6 +153,9 @@ class StudioController
                 'input_kind'=>$updated->input_kind??'script',
                 'storyboard_dirty'=>(bool)($updated->storyboard_dirty??false),
                 'has_script'=>trim((string)$updated->script)!=='',
+                'can_expand'=>($updated->input_kind??'script')==='storyboard'
+                    &&$updated->status!=='generating'
+                    &&trim((string)($updated->storyboard_source??''))!=='',
             ]);
         }
         return redirect()->to(route('project.show',$id).'#script-editor')->with('ok','剧本设置已保存');

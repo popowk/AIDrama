@@ -176,6 +176,8 @@
 @endforeach
 @else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
+{{-- This helper is served inline: the updater syncs CSS but not new public JS files. --}}
+<script>{!! file_get_contents(public_path('storyboard-state.js')) !!}</script>
 <script>
 const projectStyleSelector=document.getElementById('project-style-selector');
 if(projectStyleSelector){
@@ -193,7 +195,12 @@ if(projectStyleSelector){
 const inputKind=document.getElementById('project-input-kind');
 const storyboardSource=document.getElementById('project-storyboard-source');
 const scriptSource=document.getElementById('project-script-source');
+const storyboardState=window.AIDramaStoryboardState;
 let savedStoryboard=@json((string)($project->storyboard_source??''));
+let savedKind=@json((string)($project->input_kind??'script'));
+let serverCanExpand=@json(($project->input_kind??'script')==='storyboard'&&$project->status!=='generating'&&!empty($project->storyboard_source));
+let projectIsGenerating=@json($project->status==='generating');
+let saveInProgress=false;
 let storyboardDirty=@json((bool)($project->storyboard_dirty??false));
 let hasSavedScript=@json(trim((string)$project->script)!=='');
 const saveForm=document.getElementById('project-save-form');
@@ -202,8 +209,10 @@ const saveStatus=document.getElementById('project-save-status');
 const generationButton=document.getElementById('generate-shots-btn');
 function syncGenerationButton(){
   if(generationButton){
-    generationButton.disabled=@json($project->status==='generating')||!hasSavedScript||
-       (inputKind?.value==='storyboard'&&(storyboardDirty||storyboardSource?.value!==savedStoryboard));
+    generationButton.disabled=projectIsGenerating||saveInProgress||!hasSavedScript||
+       inputKind?.value!==savedKind||
+       (inputKind?.value==='storyboard'&&(storyboardDirty||
+         storyboardState.hasUnsavedChanges(storyboardSource?.value,savedStoryboard)));
   }
 }
 function showSourceMode(){
@@ -222,9 +231,19 @@ function syncExpandButton(){
  const button=document.getElementById('expand-storyboard-btn');
  const help=document.getElementById('expand-help');
  if(!button||!storyboardSource)return;
- const changed=storyboardSource.value!==savedStoryboard;
- button.disabled=@json($project->status==='generating')||!storyboardSource.value.trim()||changed;
- help.textContent=changed?'表格内容已修改，请先点击“保存剧本”，待出现“已保存”后即可扩写。':'原始分镜已保存，可点击扩写；不会删除已有分镜或资产。';
+ const changed=storyboardState.hasUnsavedChanges(storyboardSource.value,savedStoryboard);
+ const eligible=storyboardState.canExpand({
+   projectIsGenerating,saveInProgress,serverCanExpand,
+   selectedKind:inputKind?.value,savedKind,
+   currentSource:storyboardSource.value,savedSource:savedStoryboard
+ });
+ button.disabled=!eligible;
+ if(projectIsGenerating)help.textContent='已有生成任务正在运行，请查看下方任务状态。';
+ else if(saveInProgress)help.textContent='正在保存原始分镜…';
+ else if(changed||inputKind?.value!==savedKind)
+   help.textContent='表格尚未保存，点击“保存剧本”后即可扩写。';
+ else if(eligible)help.textContent='✓ 已保存，可以点击上方按钮逐镜扩写剧本。';
+ else help.textContent='请先粘贴有效分镜并保存，之后即可扩写。';
  syncGenerationButton();
 }
 let previewTimer=0,previewRequest=0;
@@ -282,7 +301,9 @@ function showStoryboardPreview(){
 saveForm?.addEventListener('submit',async function(event){
  event.preventDefault();
  if(!saveButton)return;
+ saveInProgress=true;
  saveButton.disabled=true;
+ syncExpandButton();
  saveStatus.textContent='正在保存原稿和生成参数…';
  saveStatus.className='hint';
  try{
@@ -299,17 +320,31 @@ saveForm?.addEventListener('submit',async function(event){
      const error=Object.values(body.errors||{}).flat().join('；');
      throw new Error(error||body.message||'保存失败（HTTP '+response.status+'）');
    }
-   savedStoryboard=String(body.storyboard_source??'');
+   savedStoryboard=storyboardState.normalizeSource(body.storyboard_source??'');
+   savedKind=String(body.input_kind??inputKind.value);
+   serverCanExpand=body.can_expand===true;
    storyboardDirty=Boolean(body.storyboard_dirty);
    hasSavedScript=Boolean(body.has_script);
-   saveStatus.textContent='✓ 已保存。'+(inputKind.value==='storyboard'?'现在可以点击下方“AI 按分镜逐段生成剧本”。':'可以继续生成分镜与资产。');
+   const ready=storyboardState.canExpand({
+     projectIsGenerating,saveInProgress:false,serverCanExpand,
+     selectedKind:inputKind.value,savedKind,
+     currentSource:storyboardSource?.value,savedSource:savedStoryboard
+   });
+   saveStatus.textContent='✓ 已保存。'+(inputKind.value==='storyboard'
+     ?(ready?'现在可以点击“AI 按分镜逐段生成剧本”。':'如果扩写按钮仍不可用，请检查表格内容或刷新页面。')
+     :'可以继续生成分镜与资产。');
    saveStatus.className='hint storyboard-save-success';
    syncExpandButton();
    syncGenerationButton();
  }catch(err){
    saveStatus.textContent='✕ 未保存：'+String(err?.message||err);
    saveStatus.className='hint storyboard-preview-error';
- }finally{saveButton.disabled=false;}
+ }finally{
+   saveInProgress=false;
+   saveButton.disabled=false;
+   syncExpandButton();
+   syncGenerationButton();
+ }
 });
 inputKind?.addEventListener('change',showSourceMode);
 storyboardSource?.addEventListener('input',()=>{syncExpandButton();showStoryboardPreview();});
