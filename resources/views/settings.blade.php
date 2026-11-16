@@ -15,8 +15,12 @@
 <section class="panel settings-panel"><h2>02 / 图片模型</h2><p class="muted small">使用独立的图片 API，为普通角色、场景和道具生成真实图片文件。</p>
 <form method="post" action="{{ route('settings.save') }}" class="form-stack">@csrf
 <input type="hidden" name="kind" value="image">
-<label>图片 API Base URL<input type="url" name="api_base" value="{{ old('kind')==='image'?old('api_base',$imageApiBase):$imageApiBase }}" required placeholder="https://api.example.com/v1"><span class="hint">需支持 /images/generations，并返回 base64 图片。</span></label>
+<label>图片 API Base URL<input type="url" name="api_base" value="{{ old('kind')==='image'?old('api_base',$imageApiBase):$imageApiBase }}" required placeholder="https://api.example.com/v1"><span class="hint">使用 chatgpt2api 新版时填写以 /v1 结尾的 Base URL；同步兼容模式需支持 /images/generations。</span></label>
 <label>模型名称<input name="model" value="{{ old('kind')==='image'?old('model',$imageModel):$imageModel }}" maxlength="191" required placeholder="如 gpt-image-1"></label>
+<label>图片生成模式<select name="delivery">
+<option value="chatgpt2api_tasks" @selected($imageDelivery==='chatgpt2api_tasks')>chatgpt2api 3.x · 异步任务（推荐，防 524、断线恢复）</option>
+<option value="openai_sync" @selected($imageDelivery==='openai_sync')>通用 OpenAI 兼容 · 同步生成（传统模式）</option>
+</select><span class="hint">异步模式使用 /api/image-tasks/generations 与 /api/image-tasks 查询；保存独立任务 ID，避免重复计费。普通图片模型不支持此协议时请选择同步。</span></label>
 <label>图片 API Key<input name="api_key" type="password" autocomplete="new-password" placeholder="{{ $imageHasKey?'已加密保存，留空保留':'输入 API Key' }}"><span class="hint">{{ $imageHasKey?'✓ 已保存密钥':'尚未设置密钥' }}</span></label>
 <button class="button primary wide" type="submit">保存图片模型</button></form></section>
 </div>
