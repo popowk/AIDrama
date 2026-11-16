@@ -3,6 +3,10 @@ declare(strict_types=1);
 require dirname(__DIR__).'/vendor/autoload.php';
 $app=require dirname(__DIR__).'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+set_exception_handler(static function(\Throwable $e):void {
+    fwrite(STDERR,"Library smoke FAILED: ".get_class($e).": ".$e->getMessage()."\n");
+    exit(1);
+});
 
 use App\Services\CreativeLibrary;
 use App\Services\FrameProfile;
@@ -91,7 +95,7 @@ try{
         'gpt-image-2 9:16 exact pixel dimensions');
     testLibrary(FrameProfile::requestSize('portrait','gpt-image-1')==='1024x1536',
         'older image model uses supported portrait alternative');
-    testLibrary(str_contains(CreativeLibrary::projectContext($project,'video'),'场景音效'),
+    testLibrary(str_contains(CreativeLibrary::projectContext($project,'video'),'环境声音'),
         'new style and skill combine into downstream video prompt');
 
     // Catalogs must be pure data and NOT overwrite custom user templates.
