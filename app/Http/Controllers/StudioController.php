@@ -6,6 +6,9 @@ use App\Services\PromptBuilder;
 use App\Services\PromptPresets;
 use App\Services\CreativeLibrary;
 use App\Services\FrameProfile;
+use App\Services\StoryboardTable;
+use App\Services\ScriptExpansionEngine;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +26,9 @@ class StudioController
     }
     public function create(Request $request) {
         $v=$request->validate([
-            'name'=>'required|string|max:191','script'=>'required|string|max:100000',
+            'name'=>'required|string|max:191','script'=>'nullable|string|max:100000',
+            'input_kind'=>['sometimes',Rule::in(['script','storyboard'])],
+            'storyboard_source'=>'nullable|string|max:100000',
             'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
@@ -32,6 +37,8 @@ class StudioController
             'skill_keys'=>'sometimes|array|max:8',
             'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
+        $kind=$v['input_kind']??'script';
+        $this->validateSource($kind,(string)($v['script']??''),(string)($v['storyboard_source']??''));
         $preset=$v['style_preset']??(isset($v['style'])?'custom':'guofeng_3d');
         $style=$preset==='custom'
             ?trim((string)($v['style']??''))
@@ -41,7 +48,8 @@ class StudioController
                 'style'=>'选择自定义风格时，请填写画风名称。',
             ]);
         $id=DB::table('projects')->insertGetId([
-            'name'=>$v['name'],'script'=>$v['script'],'style'=>$style,
+            'name'=>$v['name'],'script'=>$v['script']??'','style'=>$style,
+            'input_kind'=>$kind,'storyboard_source'=>$v['storyboard_source']??null,
             'shot_limit'=>(int)$v['shot_limit'],
             'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
             'frame_ratio'=>$v['frame_ratio']??'landscape',
@@ -50,6 +58,16 @@ class StudioController
             'created_at'=>now(),'updated_at'=>now(),
         ]);
         return redirect()->route('project.show',$id)->with('ok','项目已建立');
+    }
+    private function validateSource(string $kind,string $script,string $storyboard):void {
+        if($kind==='storyboard') {
+            try { StoryboardTable::parse($storyboard); }
+            catch(RuntimeException $e) {
+                throw ValidationException::withMessages(['storyboard_source'=>$e->getMessage()]);
+            }
+        } elseif(trim($script)==='') {
+            throw ValidationException::withMessages(['script'=>'请填写完整剧本，或选择“分镜表格”输入方式。']);
+        }
     }
     private function project(int $id): object {
         return DB::table('projects')->where('id',$id)->first() ?? abort(404);
@@ -62,14 +80,17 @@ class StudioController
         $stylePresets=CreativeLibrary::styles();
         $creativeSkills=CreativeLibrary::skills();
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills'));
+        $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments'));
     }
     public function update(Request $request,int $id) {
         $project=$this->project($id);
         if(DB::table('projects')->where('id',$id)->value('status')==='generating')
             return back()->withErrors(['script'=>'模型正在处理剧本，请完成或重试任务后再修改。']);
         $v=$request->validate([
-            'name'=>'required|string|max:191','script'=>'required|string|max:100000',
+            'name'=>'required|string|max:191','script'=>'nullable|string|max:100000',
+            'input_kind'=>['sometimes',Rule::in(['script','storyboard'])],
+            'storyboard_source'=>'nullable|string|max:100000',
             'style'=>'nullable|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
             'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
@@ -78,6 +99,19 @@ class StudioController
             'skill_keys'=>'sometimes|array|max:8',
             'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::skills()))],
         ]);
+        $kind=$v['input_kind']??($project->input_kind??'script');
+        $source=(string)($v['storyboard_source']??'');
+        $this->validateSource($kind,(string)($v['script']??''),$source);
+        if($kind==='storyboard' && trim($source)!==trim((string)($project->storyboard_source??''))) {
+            // Source changed: never treat an old expansion as the new source.
+            $v['script']='';
+            $v['script_segments']=null;
+        } elseif((string)($v['script']??'')!==(string)($project->script??'')
+            || $kind!==($project->input_kind??'script')) {
+            // A manually edited merged script supersedes stale segment cards.
+            $v['script_segments']=null;
+        }
+        $v['input_kind']=$kind;
         $preset=$v['style_preset']??($project->style_preset??'custom');
         $style=$preset==='custom'
             ?trim((string)($v['style']??$project->style))
@@ -94,10 +128,13 @@ class StudioController
             $v['creative_skills']=json_encode(CreativeLibrary::skillIds($v['skill_keys']??[]));
         unset($v['skills_present'],$v['skill_keys']);
         DB::table('projects')->where('id',$id)->update($v+['updated_at'=>now()]);
-        return back()->with('ok','剧本设置已保存');
+        return redirect()->to(route('project.show',$id).'#script-editor')->with('ok','剧本设置已保存');
     }
     public function generate(int $id) {
-        $this->project($id);
+        $project=$this->project($id);
+        if(trim((string)$project->script)==='')
+            return redirect()->to(route('project.show',$id).'#script-editor')
+                ->withErrors(['script'=>'请先根据分镜表格扩写剧本，或输入完整剧本并保存。']);
         $created=DB::transaction(function() use($id) {
             $project=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
             if (!$project) abort(404);
@@ -131,6 +168,72 @@ class StudioController
                 ? '已提交文本模型生成任务。页面会显示处理状态；模型响应较慢时无需重复点击。'
                 : '已有生成任务正在处理，请查看页面任务状态。');
     }
+    public function expandStoryboard(int $id) {
+        $project=$this->project($id);
+        if(($project->input_kind??'script')!=='storyboard')
+            return redirect()->to(route('project.show',$id).'#script-editor')
+                ->withErrors(['storyboard_source'=>'请先选择“分镜表格”并保存。']);
+        try { StoryboardTable::parse((string)$project->storyboard_source); }
+        catch(RuntimeException $e) {
+            return redirect()->to(route('project.show',$id).'#script-editor')
+                ->withErrors(['storyboard_source'=>$e->getMessage()]);
+        }
+        $created=DB::transaction(function()use($id){
+            $p=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
+            $running=DB::table('generation_jobs')->where('project_id',$id)
+                ->whereIn('status',['queued','running'])->orderByDesc('id')->first();
+            if($running) {
+                $stale=$running->started_at??$running->created_at;
+                if($stale && \Illuminate\Support\Carbon::parse($stale)->isAfter(now()->subMinutes(8)))return false;
+                DB::table('generation_jobs')->where('id',$running->id)->update([
+                    'status'=>'failed','error_message'=>'上一任务超时，可重新提交。',
+                    'finished_at'=>now(),'updated_at'=>now(),
+                ]);
+            }
+            DB::table('generation_jobs')->insert([
+                'project_id'=>$id,'status'=>'queued','kind'=>'expand',
+                'attempts'=>0,'request_script'=>$p->script??'',
+                'request_storyboard'=>$p->storyboard_source,
+                'request_style'=>$p->style,'request_shot_limit'=>$p->shot_limit,
+                'request_mode'=>$p->script_mode??'auto',
+                'request_ratio'=>$p->frame_ratio??'landscape',
+                'request_style_preset'=>$p->style_preset??'custom',
+                'request_skills'=>$p->creative_skills??null,
+                'created_at'=>now(),'updated_at'=>now(),
+            ]);
+            DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
+            return true;
+        });
+        return redirect()->to(route('project.show',$id).'#generation-state')
+            ->with('ok',$created?'已开始逐镜扩写剧本，生成后将返回剧本编辑区。':'已有生成任务正在处理。');
+    }
+
+    public function saveSegments(Request $request,int $id) {
+        $project=$this->project($id);
+        if($project->status==='generating')
+            return redirect()->to(route('project.show',$id).'#script-editor')
+                ->withErrors(['script'=>'生成期间不能编辑分段剧本。']);
+        $segments=json_decode((string)($project->script_segments??'[]'),true)?:[];
+        if(!$segments)abort(404);
+        $v=$request->validate([
+            'parts'=>'required|array|size:'.count($segments),
+            'parts.*'=>'required|string|max:20000',
+        ]);
+        foreach($segments as $i=>&$segment)
+            $segment['script']=trim((string)($v['parts'][$i]??''));
+        unset($segment);
+        $combined=StoryboardTable::combine($segments);
+        if(mb_strlen($combined)>100000)
+            return redirect()->to(route('project.show',$id).'#script-segments')
+                ->withErrors(['parts'=>'完整剧本超过 100000 字符，请缩短分段剧本。']);
+        DB::table('projects')->where('id',$id)->update([
+            'script'=>$combined,
+            'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
+            'updated_at'=>now(),
+        ]);
+        return redirect()->to(route('project.show',$id).'#script-segments')->with('ok','逐镜剧本已保存并同步到完整剧本');
+    }
+
     public function generationStatus(int $id) {
         $project=$this->project($id);
         $job=DB::table('generation_jobs')->where('project_id',$id)->orderByDesc('id')->first();
@@ -149,6 +252,7 @@ class StudioController
         return response()->json([
             'project_status'=>$project->status==='generating'&&$job&&$job->status==='failed'?'error':$project->status,
             'status'=>$job?->status??'none',
+            'kind'=>$job?->kind??'shots',
             'attempts'=>$job?->attempts??0,
             'error'=>$job?->status==='failed'?$job->error_message:null,
             'created_at'=>$job?->created_at,
@@ -156,7 +260,7 @@ class StudioController
             'finished_at'=>$job?->finished_at,
         ]);
     }
-    public function runGeneration(int $id,StoryboardEngine $engine) {
+    public function runGeneration(int $id,StoryboardEngine $engine,?ScriptExpansionEngine $expander=null) {
         $this->project($id);
         // Lock/claim exactly one pending job; never run concurrent model calls for one project.
         $job=DB::table('generation_jobs')->where('project_id',$id)
@@ -173,6 +277,31 @@ class StudioController
         ignore_user_abort(true);
         if(function_exists('set_time_limit'))@set_time_limit(360);
         try {
+            if(($job->kind??'shots')==='expand') {
+                $expander ??= new ScriptExpansionEngine();
+                $segments=$expander->expand(
+                    (string)($job->request_storyboard??''),
+                    (string)$job->request_style,(int)$job->request_shot_limit,
+                    (string)($job->request_ratio??'landscape'),
+                    (string)($job->request_style_preset??'custom'),
+                    $job->request_skills??null
+                );
+                DB::transaction(function()use($id,$job,$segments){
+                    $current=DB::table('generation_jobs')->where('id',$job->id)->lockForUpdate()->first();
+                    if(!$current||$current->status!=='running')
+                        throw new RuntimeException('扩写任务已过期，结果不会覆盖当前剧本。');
+                    DB::table('projects')->where('id',$id)->update([
+                        'script'=>StoryboardTable::combine($segments),
+                        'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
+                        'status'=>DB::table('shots')->where('project_id',$id)->exists()?'ready':'draft',
+                        'updated_at'=>now(),
+                    ]);
+                    DB::table('generation_jobs')->where('id',$job->id)->update([
+                        'status'=>'done','finished_at'=>now(),'updated_at'=>now(),
+                    ]);
+                });
+                return response()->json(['status'=>'done','kind'=>'expand','segments'=>count($segments)]);
+            }
             $engine->setMode((string)($job->request_mode??'auto'));
             $engine->setCreativeContext((string)($job->request_ratio??'landscape'),
                 (string)($job->request_style_preset??'custom'),
@@ -270,7 +399,7 @@ class StudioController
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
-        return back()->with('ok','镜头已保存');
+        return redirect()->to(route('project.show',$id).'#shot-'.$shot)->with('ok','镜头已保存');
     }
     public function prompt(int $id,int $shot,Request $request,PromptBuilder $builder) {
         $project=$this->project($id);
