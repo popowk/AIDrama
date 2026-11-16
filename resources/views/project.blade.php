@@ -61,7 +61,7 @@
 @if(count($scriptSegments))
 <div id="script-segments" class="segment-workspace">
 <div class="section-heading space"><h3>逐镜扩写的剧本 · {{ count($scriptSegments) }} 段</h3><span class="muted">可逐段修改并合并回完整剧本</span></div>
-<form method="post" action="{{ route('project.segments.save',$project->id) }}" class="form-stack">@csrf
+<form method="post" action="{{ route('project.segments.save',$project->id) }}" class="form-stack" data-inline-save="segments">@csrf
 @foreach($scriptSegments as $index=>$segment)
 <details class="segment-card" @if($index===0) open @endif>
 <summary><strong>{{ str_pad($segment['sequence']??($index+1),2,'0',STR_PAD_LEFT) }} · {{ $segment['title']??'镜头' }}</strong><span class="muted small">{{ mb_strimwidth((string)($segment['visual']??''),0,65,'…') }}</span></summary>
@@ -82,19 +82,38 @@
 </div>
 </section>
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
-<div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
+<div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong id="asset-active-count">{{ $assets->count() }}</strong><small>使用中的资产</small></div></div>
 <p class="hint">时长依据中文台词字符与开口前动作估算，不等同真实配音时长；超过上限的台词会继续拆分为连续镜头。</p>
 <div class="section-heading space" id="assets-panel"><h2>03 / 资产清单</h2>
-@if($assets->contains(fn($a)=>$a->source_kind==='generate'))
-<button class="button ghost" type="button" onclick="generateAllAssets(this,{{ $project->id }})">一键生成普通资产图</button>
-@else<span class="muted">真实上传 / AI 生成</span>@endif
+<button class="button ghost" id="generate-all-assets-btn" type="button"
+  onclick="generateAllAssets(this,{{ $project->id }})"
+  @disabled(!$assets->contains(fn($a)=>$a->source_kind==='generate'))>一键生成普通资产图</button>
 </div>
 <p id="batch-image-status" class="hint" role="status"></p>
 <p class="hint">chatgpt2api 3.x 异步模式：提交后可关闭页面，任务 ID 会保留；再次打开页面自动查询结果。批量操作只提交任务，不重复生图。</p>
 <p class="hint">Logo、产品型号、产品外观必须上传原始素材；普通角色、场景和非品牌道具可使用图片模型生成。素材仅在管理员登录后可查看。</p>
-@if($assets->count())
-@foreach($assets as $a)
-<div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
+@if($allAssets->count())
+@foreach($allAssets as $a)
+<div class="asset-fold-card @if($a->is_archived) is-archived @endif"
+     id="asset-shell-{{ $a->id }}" data-archived="{{ $a->is_archived?'1':'0' }}"
+     data-asset-name="{{ $a->name }}" data-source-kind="{{ $a->source_kind }}">
+  <div class="asset-fold-header">
+    <div class="asset-fold-heading">
+      <span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
+      <strong>{{ $a->name }}</strong>
+      <span class="asset-fold-label muted small">{{ $a->is_archived?'已折叠 · 不参与生图':'' }}</span>
+    </div>
+    <form method="post" class="asset-fold-action" action="{{ $a->is_archived?route('asset.restore',[$project->id,$a->id]):route('asset.archive',[$project->id,$a->id]) }}"
+      data-archive-url="{{ route('asset.archive',[$project->id,$a->id]) }}"
+      data-restore-url="{{ route('asset.restore',[$project->id,$a->id]) }}"
+      data-asset-id="{{ $a->id }}" data-inline-toggle="asset">
+      @csrf
+      <button class="button outline" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>{{ $a->is_archived?'恢复资产':'移除 · 折叠' }}</button>
+    </form>
+  </div>
+  <p class="asset-fold-feedback hint" role="status" aria-live="polite"></p>
+  <div class="asset-fold-body" @if($a->is_archived) hidden @endif>
+    <div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
 <div class="asset-info">
 <span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
 <strong>{{ $a->name }}</strong>
@@ -106,16 +125,16 @@
 <details class="asset-prompt-editor" @if(session('open_asset_prompt')===$a->id) open @endif>
 <summary>{{ ($a->prompt_override??false)?'编辑手动生图提示词':'查看 / 编辑生图提示词' }} <span class="muted small">· {{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}模板{{ ($a->prompt_override??false)?'（单资产覆盖中）':'' }}</span></summary>
 <p class="hint">默认从模型设置中读取{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??'道具' }}专用提示词。此处保存后仅覆盖当前资产，不影响其他资产；留空保存将恢复类别模板。</p>
-<form method="post" action="{{ route('asset.prompt.save',[$project->id,$a->id]) }}" class="asset-prompt-form">@csrf
+<form method="post" action="{{ route('asset.prompt.save',[$project->id,$a->id]) }}" class="asset-prompt-form" data-inline-save="asset-prompt">@csrf
 <label class="small">实际传给图片模型的提示词
 <textarea name="prompt" rows="7" maxlength="30000" @disabled($a->image_status==='generating'||$project->status==='generating')>{{ \App\Services\AssetImagePrompt::build($project,$a) }}</textarea></label>
 <button class="button outline" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>保存该资产提示词</button>
 </form>
-<form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset">@csrf
+<form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset" data-inline-save="asset-prompt-reset">@csrf
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>恢复使用类别提示词</button></form>
 </details>
 <div class="asset-buttons">
-<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form">
+<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
 @csrf
 <label class="small">该资产画幅（覆盖项目默认）
 <select name="frame_ratio" @disabled($a->image_status==='generating')>
@@ -126,15 +145,13 @@
 </select></label>
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
 </form>
-<form method="post" action="{{ route('asset.archive',[$project->id,$a->id]) }}" class="asset-archive-form" onsubmit="return confirm('将此资产移至“已移除资产”？原图、提示词和生成记录都会保留，可以随时恢复。')">@csrf
-<button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>移除资产（可恢复）</button></form>
 @if($a->source_kind==='upload')
-<form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload">@csrf
+<form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload" data-inline-save="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
 </form>
 @else
-<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
 @endif
 </div>
 </div>
@@ -156,22 +173,10 @@
 @endif
 </div>
 </div>
+  </div>
+</div>
 @endforeach
-@else<div class="empty small">目前没有正在使用的资产。已移除资产可在下面恢复。</div>@endif
-<div class="archived-asset-workspace" id="archived-assets">
-<details @if($archivedAssets->count()) open @endif>
-<summary>已移除资产（{{ $archivedAssets->count() }}）<span class="muted small">不参与批量生图和提示词引用，可随时恢复，原图不删除</span></summary>
-@if($archivedAssets->count())
-@foreach($archivedAssets as $a)
-<div class="archived-asset-row" id="archived-asset-{{ $a->id }}">
-<div><strong>{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }} · {{ $a->name }}</strong>
-<p class="hint">{{ $a->file_path?'已保存原图 · ':'' }}{{ ($a->prompt_override??false)?'独立提示词已保存':'使用类别提示词' }} · {{ $a->description }}</p></div>
-<form method="post" action="{{ route('asset.restore',[$project->id,$a->id]) }}">@csrf
-<button class="button outline" type="submit" @disabled($project->status==='generating')>恢复资产</button>
-</form></div>
-@endforeach
-@else<p class="hint">暂无已移除资产。</p>@endif
-</details></div>
+@else<div class="empty small">生成分镜后会在这里显示人物、场景与道具。</div>@endif
 </section></div>
 <dialog id="asset-lightbox" class="asset-lightbox" aria-label="资产图片大图预览">
     <div class="asset-lightbox-head">
@@ -191,7 +196,7 @@
 @if($shots->count())
 @foreach($shots as $shot)
 <article class="shot-card" id="shot-{{ $shot->id }}"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
-<form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack">@csrf
+<form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
 <div class="inline-fields"><label>开口之前的动作<textarea rows="2" name="action_before">{{ $shot->action_before }}</textarea></label><label>口播/台词<textarea rows="2" name="dialogue">{{ $shot->dialogue }}</textarea></label></div>
