@@ -2,6 +2,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use ZipArchive;
 
@@ -297,7 +298,23 @@ class ReleaseManager
             }
             return $this->finish($root,'done','已更新到 '.$tag.'，保留上一版本用于回滚；更旧的发布目录已尝试清理',$tag);
         } catch(\Throwable $e) {
-            $message=$e instanceof RuntimeException?$e->getMessage():'更新中出现服务器错误，请检查 Laravel 日志';
+            $incident=bin2hex(random_bytes(5));
+            try {
+                Log::error('AIDrama system update failed',[
+                    'incident'=>$incident,
+                    'target_version'=>$tag,
+                    'error_type'=>get_class($e),
+                    'exception'=>$e,
+                ]);
+            } catch(\Throwable $logError) {
+                error_log('[AIDrama] update failure '.$incident.' '.get_class($e).
+                    ' in '.$e->getFile().':'.$e->getLine());
+            }
+            // Never expose database internals or third-party response bodies
+            // in the update UI. The private Laravel log has full diagnostics.
+            $message=$e instanceof RuntimeException
+                ?$e->getMessage()
+                :'更新中出现服务器错误，编号 '.$incident.'，请检查 Laravel 日志';
             $this->setState($root,'failed',$message,$tag);
             throw new RuntimeException($message,0,$e);
         } finally {
