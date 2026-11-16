@@ -75,18 +75,25 @@ class AssetController
             }
             return response()->json(['status'=>'ready','image_url'=>route('asset.file',[$id,$asset])]);
         }catch(\Throwable $e) {
+            $incident=bin2hex(random_bytes(5));
             $message=$e instanceof RuntimeException
                 ?mb_substr($e->getMessage(),0,230)
-                :'图片生成失败，请检查模型或服务器日志';
+                :'图片生成出现服务器错误，请根据编号检查 Laravel 日志';
+            $display=$message.'（错误编号 '.$incident.'）';
             DB::table('assets')->where('id',$asset)->where('project_id',$id)
                 ->where('image_status','generating')->update([
-                    'image_status'=>'error','image_error'=>$message,
+                    'image_status'=>'error','image_error'=>$display,
                     'image_started_at'=>null,'updated_at'=>now(),
                 ]);
+            // Full exception details stay in private Laravel logs only;
+            // never log API keys, request headers, image prompts or raw provider payloads.
             Log::warning('Asset image generation failed',[
-                'project_id'=>$id,'asset_id'=>$asset,'exception'=>get_class($e),
+                'incident'=>$incident,'project_id'=>$id,'asset_id'=>$asset,
+                'exception'=>get_class($e),
+                'reason'=>$e instanceof RuntimeException?$message:'internal_error',
+                'source'=>basename($e->getFile()).':'.$e->getLine(),
             ]);
-            return response()->json(['status'=>'error','error'=>$message],422);
+            return response()->json(['status'=>'error','error'=>$display,'incident'=>$incident],422);
         }
     }
 
