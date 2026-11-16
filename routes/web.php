@@ -34,6 +34,7 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/projects',[StudioController::class,'create'])->name('project.create');
     Route::get('/projects/{id}',[StudioController::class,'show'])->whereNumber('id')->name('project.show');
     Route::post('/projects/{id}/save',[StudioController::class,'update'])->whereNumber('id')->name('project.update');
+    Route::post('/projects/{id}/storyboard/preview',[StudioController::class,'previewStoryboard'])->middleware('throttle:75,1')->whereNumber('id')->name('project.storyboard.preview');
     Route::post('/projects/{id}/generate',[StudioController::class,'generate'])->whereNumber('id')->name('project.generate');
     Route::post('/projects/{id}/expand-storyboard',[StudioController::class,'expandStoryboard'])->whereNumber('id')->name('project.expand');
     Route::post('/projects/{id}/script-segments',[StudioController::class,'saveSegments'])->whereNumber('id')->name('project.segments.save');
