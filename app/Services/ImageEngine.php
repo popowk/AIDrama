@@ -35,7 +35,11 @@ class ImageEngine
                 FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE))
                 throw new RuntimeException('图片 API 解析到内网或保留地址，已阻止访问');
         }
+        $frame=FrameProfile::effective($project,$asset);
+        $size=FrameProfile::requestSize($frame,$model);
         $prompt=PromptPresets::active('image')."\n\n"
+            ."输出画幅：".FrameProfile::prompt($frame)."\n"
+            .CreativeLibrary::projectContext($project,'image')."\n"
             ."项目画风：{$project->style}\n资产类别：{$asset->type}\n"
             ."资产名称：{$asset->name}\n视觉设定：{$asset->description}\n"
             ."专业生图要求：统一角色/场景风格，不添加未说明品牌和文字。";
@@ -44,7 +48,7 @@ class ImageEngine
         $res=Http::withToken($key)->acceptJson()->asJson()
             ->withoutRedirecting()->connectTimeout(15)->timeout(165)
             ->post($base.'/images/generations',[
-                'model'=>$model,'prompt'=>$prompt,'n'=>1,'size'=>'1024x1024',
+                'model'=>$model,'prompt'=>$prompt,'n'=>1,'size'=>$size,
             ]);
         if(!$res->successful())
             throw new RuntimeException('图片模型请求失败（HTTP '.$res->status().'），请检查兼容接口、模型或余额');
