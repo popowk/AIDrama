@@ -56,7 +56,7 @@ $project=DB::table('projects')->where('id',$id)->first();
 $shot=DB::table('shots')->where('id',$shotId)->first();
 $prompt=(new PromptBuilder())->build($project,$shot,'kling');
 assertMedia(str_contains($prompt,'我自己的可灵镜头指令'),'Kling prompt custom text');
-assertMedia(str_contains($prompt,'屏幕文案：4G监控'),'on-screen copy');
+assertMedia(!str_contains($prompt,'屏幕文案：4G监控') && str_contains($prompt,'不生成字幕'),'no captions in video prompt');
 assertMedia(str_contains($prompt,'中维世纪K3C摄像头'),'brand upload warning');
 PromptPresets::reset('kling');
 assertMedia(PromptPresets::mode('kling')==='reference','reference reset');
@@ -310,6 +310,7 @@ Http::fake(['https://api.openai.com/*'=>Http::response([
     'choices'=>[['message'=>['content'=>json_encode($response,JSON_UNESCAPED_UNICODE)]]],
 ],200)]);
 $engine=new StoryboardEngine;
+$engine->setVideoMode('story'); // legacy narrative and on-screen-copy schema preserved
 $engine->setMode('auto');
 $result=$engine->generate('主持人在庭院介绍 K3C 监控产品','3D国风动画',15);
 assertMedia($result['script_mode']==='talking','AI-detected talking-only mode');
