@@ -142,3 +142,23 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .archived-asset-row .hint{overflow-wrap:anywhere;max-height:3.5em;overflow:hidden}
 .archived-asset-row form{flex-shrink:0}
 @media(max-width:540px){.archived-asset-row{align-items:flex-start;flex-direction:column}.archived-asset-workspace summary .muted{display:block;margin:3px 0}}
+
+/* Fast inline asset fold/restore. The original media preview stays mounted. */
+.asset-fold-card{border-top:1px solid var(--line);padding:12px 0 14px;scroll-margin-top:88px}
+.asset-fold-card.is-archived{padding:9px 0}
+.asset-fold-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.asset-fold-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.asset-fold-heading strong{font-size:14px;overflow-wrap:anywhere}
+.asset-fold-heading .asset-type{flex-shrink:0}
+.asset-fold-action{margin:0;flex-shrink:0}
+.asset-fold-action .button{padding:7px 12px;font-size:12px}
+.asset-fold-card.is-archived .asset-fold-action .button{border-color:#627bad;color:#b9caff}
+.asset-fold-label:not(:empty){font-size:12px}
+.asset-fold-feedback{margin:5px 0 0;min-height:0}
+.asset-fold-feedback:empty{display:none}
+.asset-fold-feedback.is-error{color:#ffb4bd}
+.asset-fold-body .asset{border-top:0;padding-top:9px}
+.inline-save-feedback{font-size:12px;line-height:1.5;margin:7px 0}
+.inline-save-feedback.is-error{color:#ffb4bd}
+.inline-save-feedback.is-success{color:#9cddb9}
+@media(max-width:540px){.asset-fold-header{align-items:flex-start}.asset-fold-heading{flex:1}.asset-fold-action .button{padding:7px 9px}}

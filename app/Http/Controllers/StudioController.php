@@ -84,7 +84,7 @@ class StudioController
         $creativeSkills=CreativeLibrary::skills();
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets'));
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -243,9 +243,12 @@ class StudioController
 
     public function saveSegments(Request $request,int $id) {
         $project=$this->project($id);
-        if($project->status==='generating')
+        if($project->status==='generating') {
+            if($request->expectsJson())
+                return response()->json(['message'=>'生成期间不能编辑分段剧本。'],409);
             return redirect()->to(route('project.show',$id).'#script-editor')
                 ->withErrors(['script'=>'生成期间不能编辑分段剧本。']);
+        }
         $segments=json_decode((string)($project->script_segments??'[]'),true)?:[];
         if(!$segments)abort(404);
         $v=$request->validate([
@@ -256,13 +259,20 @@ class StudioController
             $segment['script']=trim((string)($v['parts'][$i]??''));
         unset($segment);
         $combined=StoryboardTable::combine($segments);
-        if(mb_strlen($combined)>100000)
+        if(mb_strlen($combined)>100000) {
+            if($request->expectsJson())
+                return response()->json(['message'=>'完整剧本超过 100000 字符，请缩短分段剧本。'],422);
             return redirect()->to(route('project.show',$id).'#script-segments')
                 ->withErrors(['parts'=>'完整剧本超过 100000 字符，请缩短分段剧本。']);
+        }
         DB::table('projects')->where('id',$id)->update([
             'script'=>$combined,'storyboard_dirty'=>false,
             'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
             'updated_at'=>now(),
+        ]);
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>'逐镜剧本已保存并同步到完整剧本',
+            'script'=>$combined,'has_script'=>true,
         ]);
         return redirect()->to(route('project.show',$id).'#script-segments')->with('ok','逐镜剧本已保存并同步到完整剧本');
     }
@@ -451,6 +461,10 @@ class StudioController
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>'镜头已保存',
+            'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
+        ]);
         return redirect()->to(route('project.show',$id).'#shot-'.$shot)->with('ok','镜头已保存');
     }
     public function prompt(int $id,int $shot,Request $request,PromptBuilder $builder) {
@@ -492,11 +506,20 @@ class StudioController
             'custom'=>'nullable|string|max:25000',
         ]);
         PromptPresets::save($v['kind'],$v['mode'],$v['reference'],$v['custom']??'');
-        return back()->with('ok','已保存「'.PromptPresets::LABELS[$v['kind']].'」提示词，后续生成会使用当前选定模式');
+        $message='已保存「'.PromptPresets::LABELS[$v['kind']].'」提示词，后续生成会使用当前选定模式';
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'mode'=>$v['mode'],'kind'=>$v['kind'],
+        ]);
+        return back()->with('ok',$message);
     }
     public function resetPromptSettings(string $kind) {
         PromptPresets::reset($kind);
-        return back()->with('ok','已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词');
+        $message='已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词';
+        if(request()->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'kind'=>$kind,
+            'mode'=>'reference','reference'=>PromptPresets::reference($kind),
+        ]);
+        return back()->with('ok',$message);
     }
     public function detectModels(Request $request,\App\Services\ModelDiscovery $discovery)
     {
@@ -530,7 +553,11 @@ class StudioController
            isset($parts['query'])||isset($parts['fragment'])||
            $host==='localhost'||str_ends_with($host,'.local')||
            filter_var($host,FILTER_VALIDATE_IP))
-            return back()->withErrors(['api_base'=>'请填写可信的公网 HTTPS API 地址，不能使用 IP、localhost、账号或 URL 参数']);
+        {
+            $message='请填写可信的公网 HTTPS API 地址，不能使用 IP、localhost、账号或 URL 参数';
+            if($request->expectsJson())return response()->json(['ok'=>false,'message'=>$message],422);
+            return back()->withErrors(['api_base'=>$message]);
+        }
         $type=$v['kind'];
         $prefix='ai.'.$type.'.';
         DB::transaction(function() use ($v,$prefix) {
@@ -545,7 +572,12 @@ class StudioController
                     'value'=>Crypt::encryptString($v['api_key']),'updated_at'=>now(),
                 ]);
         });
-        return back()->with('ok',($type==='text'?'文本':'图片').'模型配置已保存。API Key 仅存储加密值，未输入新密钥则保留旧值。');
+        $message=($type==='text'?'文本':'图片').'模型配置已保存。API Key 仅存储加密值，未输入新密钥则保留旧值。';
+        if($request->expectsJson())return response()->json([
+            'ok'=>true,'message'=>$message,'kind'=>$type,
+            'key_updated'=>filled($v['api_key']??null),
+        ]);
+        return back()->with('ok',$message);
     }
     public function export(int $id) {
         $project=$this->project($id);

@@ -61,7 +61,7 @@
 @if(count($scriptSegments))
 <div id="script-segments" class="segment-workspace">
 <div class="section-heading space"><h3>逐镜扩写的剧本 · {{ count($scriptSegments) }} 段</h3><span class="muted">可逐段修改并合并回完整剧本</span></div>
-<form method="post" action="{{ route('project.segments.save',$project->id) }}" class="form-stack">@csrf
+<form method="post" action="{{ route('project.segments.save',$project->id) }}" class="form-stack" data-inline-save="segments">@csrf
 @foreach($scriptSegments as $index=>$segment)
 <details class="segment-card" @if($index===0) open @endif>
 <summary><strong>{{ str_pad($segment['sequence']??($index+1),2,'0',STR_PAD_LEFT) }} · {{ $segment['title']??'镜头' }}</strong><span class="muted small">{{ mb_strimwidth((string)($segment['visual']??''),0,65,'…') }}</span></summary>
@@ -82,19 +82,38 @@
 </div>
 </section>
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
-<div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
+<div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong id="asset-active-count">{{ $assets->count() }}</strong><small>使用中的资产</small></div></div>
 <p class="hint">时长依据中文台词字符与开口前动作估算，不等同真实配音时长；超过上限的台词会继续拆分为连续镜头。</p>
 <div class="section-heading space" id="assets-panel"><h2>03 / 资产清单</h2>
-@if($assets->contains(fn($a)=>$a->source_kind==='generate'))
-<button class="button ghost" type="button" onclick="generateAllAssets(this,{{ $project->id }})">一键生成普通资产图</button>
-@else<span class="muted">真实上传 / AI 生成</span>@endif
+<button class="button ghost" id="generate-all-assets-btn" type="button"
+  onclick="generateAllAssets(this,{{ $project->id }})"
+  @disabled(!$assets->contains(fn($a)=>$a->source_kind==='generate'))>一键生成普通资产图</button>
 </div>
 <p id="batch-image-status" class="hint" role="status"></p>
 <p class="hint">chatgpt2api 3.x 异步模式：提交后可关闭页面，任务 ID 会保留；再次打开页面自动查询结果。批量操作只提交任务，不重复生图。</p>
 <p class="hint">Logo、产品型号、产品外观必须上传原始素材；普通角色、场景和非品牌道具可使用图片模型生成。素材仅在管理员登录后可查看。</p>
-@if($assets->count())
-@foreach($assets as $a)
-<div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
+@if($allAssets->count())
+@foreach($allAssets as $a)
+<div class="asset-fold-card @if($a->is_archived) is-archived @endif"
+     id="asset-shell-{{ $a->id }}" data-archived="{{ $a->is_archived?'1':'0' }}"
+     data-asset-name="{{ $a->name }}" data-source-kind="{{ $a->source_kind }}">
+  <div class="asset-fold-header">
+    <div class="asset-fold-heading">
+      <span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
+      <strong>{{ $a->name }}</strong>
+      <span class="asset-fold-label muted small">{{ $a->is_archived?'已折叠 · 不参与生图':'' }}</span>
+    </div>
+    <form method="post" class="asset-fold-action" action="{{ $a->is_archived?route('asset.restore',[$project->id,$a->id]):route('asset.archive',[$project->id,$a->id]) }}"
+      data-archive-url="{{ route('asset.archive',[$project->id,$a->id]) }}"
+      data-restore-url="{{ route('asset.restore',[$project->id,$a->id]) }}"
+      data-asset-id="{{ $a->id }}" data-inline-toggle="asset">
+      @csrf
+      <button class="button outline" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>{{ $a->is_archived?'恢复资产':'移除 · 折叠' }}</button>
+    </form>
+  </div>
+  <p class="asset-fold-feedback hint" role="status" aria-live="polite"></p>
+  <div class="asset-fold-body" @if($a->is_archived) hidden @endif>
+    <div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
 <div class="asset-info">
 <span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
 <strong>{{ $a->name }}</strong>
@@ -106,16 +125,16 @@
 <details class="asset-prompt-editor" @if(session('open_asset_prompt')===$a->id) open @endif>
 <summary>{{ ($a->prompt_override??false)?'编辑手动生图提示词':'查看 / 编辑生图提示词' }} <span class="muted small">· {{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}模板{{ ($a->prompt_override??false)?'（单资产覆盖中）':'' }}</span></summary>
 <p class="hint">默认从模型设置中读取{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??'道具' }}专用提示词。此处保存后仅覆盖当前资产，不影响其他资产；留空保存将恢复类别模板。</p>
-<form method="post" action="{{ route('asset.prompt.save',[$project->id,$a->id]) }}" class="asset-prompt-form">@csrf
+<form method="post" action="{{ route('asset.prompt.save',[$project->id,$a->id]) }}" class="asset-prompt-form" data-inline-save="asset-prompt">@csrf
 <label class="small">实际传给图片模型的提示词
 <textarea name="prompt" rows="7" maxlength="30000" @disabled($a->image_status==='generating'||$project->status==='generating')>{{ \App\Services\AssetImagePrompt::build($project,$a) }}</textarea></label>
 <button class="button outline" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>保存该资产提示词</button>
 </form>
-<form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset">@csrf
+<form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset" data-inline-save="asset-prompt-reset">@csrf
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>恢复使用类别提示词</button></form>
 </details>
 <div class="asset-buttons">
-<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form">
+<form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form" data-inline-save="asset-ratio">
 @csrf
 <label class="small">该资产画幅（覆盖项目默认）
 <select name="frame_ratio" @disabled($a->image_status==='generating')>
@@ -126,15 +145,13 @@
 </select></label>
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
 </form>
-<form method="post" action="{{ route('asset.archive',[$project->id,$a->id]) }}" class="asset-archive-form" onsubmit="return confirm('将此资产移至“已移除资产”？原图、提示词和生成记录都会保留，可以随时恢复。')">@csrf
-<button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>移除资产（可恢复）</button></form>
 @if($a->source_kind==='upload')
-<form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload">@csrf
+<form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload" data-inline-save="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
 </form>
 @else
-<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating'||$a->is_archived||$project->status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
 @endif
 </div>
 </div>
@@ -156,22 +173,10 @@
 @endif
 </div>
 </div>
+  </div>
+</div>
 @endforeach
-@else<div class="empty small">目前没有正在使用的资产。已移除资产可在下面恢复。</div>@endif
-<div class="archived-asset-workspace" id="archived-assets">
-<details @if($archivedAssets->count()) open @endif>
-<summary>已移除资产（{{ $archivedAssets->count() }}）<span class="muted small">不参与批量生图和提示词引用，可随时恢复，原图不删除</span></summary>
-@if($archivedAssets->count())
-@foreach($archivedAssets as $a)
-<div class="archived-asset-row" id="archived-asset-{{ $a->id }}">
-<div><strong>{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }} · {{ $a->name }}</strong>
-<p class="hint">{{ $a->file_path?'已保存原图 · ':'' }}{{ ($a->prompt_override??false)?'独立提示词已保存':'使用类别提示词' }} · {{ $a->description }}</p></div>
-<form method="post" action="{{ route('asset.restore',[$project->id,$a->id]) }}">@csrf
-<button class="button outline" type="submit" @disabled($project->status==='generating')>恢复资产</button>
-</form></div>
-@endforeach
-@else<p class="hint">暂无已移除资产。</p>@endif
-</details></div>
+@else<div class="empty small">生成分镜后会在这里显示人物、场景与道具。</div>@endif
 </section></div>
 <dialog id="asset-lightbox" class="asset-lightbox" aria-label="资产图片大图预览">
     <div class="asset-lightbox-head">
@@ -191,7 +196,7 @@
 @if($shots->count())
 @foreach($shots as $shot)
 <article class="shot-card" id="shot-{{ $shot->id }}"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
-<form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack">@csrf
+<form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
 <div class="inline-fields"><label>开口之前的动作<textarea rows="2" name="action_before">{{ $shot->action_before }}</textarea></label><label>口播/台词<textarea rows="2" name="dialogue">{{ $shot->dialogue }}</textarea></label></div>
@@ -466,6 +471,184 @@ if(imageDialog){
     if(image)image.removeAttribute('src');
   });
 }
+// Inline edits: save the record without navigating away or losing scroll position.
+async function sendInlineForm(form){
+  const response=await fetch(form.action,{
+    method:'POST',body:new FormData(form),credentials:'same-origin',redirect:'follow',
+    headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'},
+    cache:'no-store'
+  });
+  const contentType=(response.headers.get('content-type')||'').toLowerCase();
+  if(response.redirected || !contentType.includes('json'))
+    throw new Error('登录状态已过期或接口没有返回 JSON（HTTP '+response.status+'），请刷新或重新登录');
+  const result=await response.json();
+  if(!response.ok||result.ok===false) {
+    const detail=Object.values(result.errors||{}).flat().join('；');
+    throw new Error(detail||result.message||'操作失败（HTTP '+response.status+'）');
+  }
+  return result;
+}
+
+function syncAssetTotals(){
+  const active=document.querySelectorAll('.asset-fold-card:not(.is-archived)').length;
+  const total=document.getElementById('asset-active-count');
+  if(total)total.textContent=String(active);
+  const generateAll=document.getElementById('generate-all-assets-btn');
+  if(generateAll)
+    generateAll.disabled=!document.querySelector('.asset-fold-card:not(.is-archived) .asset-generate');
+}
+
+async function toggleAssetFold(form){
+  const id=Number(form.dataset.assetId);
+  const shell=document.getElementById('asset-shell-'+id);
+  const button=form.querySelector('button[type="submit"]');
+  if(!shell||!button)return;
+  const note=shell.querySelector('.asset-fold-feedback');
+  const wasArchived=shell.dataset.archived==='1';
+  button.disabled=true;
+  if(note){note.textContent='正在保存…';note.classList.remove('is-error');}
+  try{
+    const result=await sendInlineForm(form);
+    if(result.archived!==!wasArchived)
+      throw new Error('服务器返回的资产状态与操作不匹配，请检查状态');
+    const archived=Boolean(result.archived);
+    shell.dataset.archived=archived?'1':'0';
+    shell.classList.toggle('is-archived',archived);
+    const body=shell.querySelector('.asset-fold-body');
+    if(body)body.hidden=archived;
+    const foldLabel=shell.querySelector('.asset-fold-label');
+    if(foldLabel)foldLabel.textContent=archived?'已折叠 · 不参与生图':'';
+    form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
+    button.textContent=archived?'恢复资产':'移除 · 折叠';
+    if(note)note.textContent=archived?'已折叠，随时可以恢复。':'已恢复，继续编辑或生成图片。';
+    syncAssetTotals();
+  }catch(error){
+    if(note){note.textContent='操作失败：'+(error.message||String(error));note.classList.add('is-error');}
+  }finally{button.disabled=false;}
+}
+
+function inlineSaveMessage(form,message,failed){
+  let status=form.nextElementSibling;
+  if(!status||!status.classList.contains('inline-save-feedback')){
+    status=document.createElement('p');
+    status.className='inline-save-feedback';
+    status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    form.insertAdjacentElement('afterend',status);
+  }
+  status.textContent=(failed?'✕ ':'✓ ')+message;
+  status.classList.toggle('is-error',failed);
+  status.classList.toggle('is-success',!failed);
+}
+
+function siteRoute(url){
+  if(!url)return null;
+  try{
+    const parsed=new URL(url,window.location.href);
+    return parsed.origin===window.location.origin?parsed.toString():null;
+  }catch(error){return null;}
+}
+function updateAssetPreview(id,result){
+  if(!result?.image_url||!result?.thumbnail_url||!result?.download_url)return;
+  const shell=document.getElementById('asset-shell-'+id);
+  const card=document.getElementById('asset-'+id);
+  const preview=card?.querySelector('.asset-preview');
+  if(!shell||!preview)return;
+  const imageUrl=siteRoute(result.image_url);
+  const thumbnailUrl=siteRoute(result.thumbnail_url);
+  const downloadUrl=siteRoute(result.download_url);
+  if(!imageUrl||!thumbnailUrl||!downloadUrl)return;
+  const cache='?v='+Date.now();
+  const trigger=document.createElement('button');
+  trigger.type='button';trigger.className='asset-preview-trigger';
+  trigger.dataset.previewSrc=imageUrl+cache;
+  trigger.dataset.previewName=shell.dataset.assetName||'资产参考图';
+  trigger.dataset.downloadUrl=downloadUrl;
+  trigger.setAttribute('aria-label','预览'+trigger.dataset.previewName+'参考图');
+  const img=document.createElement('img');
+  img.src=thumbnailUrl+cache;
+  img.alt=trigger.dataset.previewName+'缩略图';
+  img.loading='lazy';img.decoding='async';img.width=176;img.height=132;
+  const label=document.createElement('span');
+  label.className='asset-preview-label';label.textContent='点击放大预览';
+  trigger.append(img,label);
+  trigger.addEventListener('click',()=>openAssetPreview(trigger));
+  const link=document.createElement('a');
+  link.className='button outline asset-download-button';
+  link.href=downloadUrl;link.textContent='↓ 下载原图';
+  preview.replaceChildren(trigger,link);
+  const button=card.querySelector('.asset-generate');
+  if(button){button.dataset.hasImage='1';button.textContent='重新生成图片';}
+  const upload=card.querySelector('.asset-upload button[type="submit"]');
+  if(upload)upload.textContent='替换真实素材';
+  card.dataset.pending='0';
+  const status=card.querySelector('.asset-status');
+  if(status)status.textContent=shell.dataset.sourceKind==='upload'?'已上传真实参考图':'AI 图片已生成';
+}
+
+document.addEventListener('submit',async event=>{
+  const form=event.target;
+  if(!(form instanceof HTMLFormElement))return;
+  if(form.matches('[data-inline-toggle="asset"]')){
+    event.preventDefault();
+    await toggleAssetFold(form);
+    return;
+  }
+  const kind=form.dataset.inlineSave;
+  if(!kind)return;
+  event.preventDefault();
+  const submit=form.querySelector('button[type="submit"]');
+  if(submit)submit.disabled=true;
+  inlineSaveMessage(form,'正在保存…',false);
+  try{
+    const result=await sendInlineForm(form);
+    const shell=form.closest('.asset-fold-card');
+    const card=form.closest('.shot-card');
+    if(kind==='asset-prompt'||kind==='asset-prompt-reset'){
+      const field=shell?.querySelector('.asset-prompt-form textarea');
+      if(field){
+        field.value=String(result.prompt??'');
+        field.dataset.lastSavedPrompt=field.value;
+      }
+      const summary=shell?.querySelector('.asset-prompt-editor summary');
+      if(summary)summary.textContent=result.prompt_override
+        ?'编辑手动生图提示词（单资产覆盖中）':'查看 / 编辑生图提示词（使用类别模板）';
+    }else if(kind==='asset-ratio'){
+      const field=shell?.querySelector('.asset-prompt-form textarea');
+      if(field && !result.prompt_override &&
+        field.value===(field.dataset.lastSavedPrompt??field.defaultValue)){
+        field.value=String(result.prompt??'');
+        field.dataset.lastSavedPrompt=field.value;
+      }
+    }else if(kind==='asset-upload'){
+      const id=Number(shell?.id.replace('asset-shell-',''));
+      if(id)updateAssetPreview(id,result);
+      const input=form.querySelector('input[type="file"]');
+      if(input)input.value='';
+    }else if(kind==='segments'){
+      if(scriptSource)scriptSource.value=String(result.script??'');
+      hasSavedScript=Boolean(result.has_script);
+      storyboardDirty=false;
+      syncGenerationButton();
+      const fullScriptPanel=document.getElementById('project-script-pane');
+      if(fullScriptPanel&&hasSavedScript)fullScriptPanel.hidden=false;
+    }else if(kind==='shot'&&card){
+      const heading=card.querySelector('.shot-head strong');
+      if(heading)heading.textContent=String(result.title??'');
+      const duration=card.querySelector('.shot-head .chip');
+      if(duration)duration.textContent=String(result.duration_seconds??'')+' 秒';
+      const prompt=card.querySelector('.prompt-output');
+      if(prompt)prompt.value='';
+    }
+    inlineSaveMessage(form,result.message||'保存成功',false);
+  }catch(error){
+    inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
+  }finally{if(submit)submit.disabled=false;}
+});
+
+document.querySelectorAll('.asset-prompt-form textarea').forEach(field=>{
+  field.dataset.lastSavedPrompt=field.value;
+});
+
 // Keep a precise failure stage instead of surfacing opaque Safari exceptions
 // such as "The string did not match the expected pattern".
 async function generateAsset(button,project,id,refresh=true){
@@ -508,8 +691,8 @@ async function generateAsset(button,project,id,refresh=true){
     stage='处理生成结果';
     if(data.status==='ready'){
       success=true;
-      if(status)status.textContent='图片生成成功，正在显示预览…';
-      if(refresh)window.location.reload();
+      if(status)status.textContent='图片已生成，正在更新预览…';
+      updateAssetPreview(id,data);
     }else if(data.status==='generating'){
       success=true; // A durable remote task is accepted; completion is polled separately.
       const card=document.getElementById('asset-'+id);
@@ -533,11 +716,16 @@ async function generateAsset(button,project,id,refresh=true){
       const card=document.getElementById('asset-'+id);
       if(card)card.dataset.pending='1';
     }
-  }finally{button.disabled=false;button.textContent=original;}
+  }finally{
+    button.disabled=false;
+    button.textContent=button.dataset.hasImage==='1'?'重新生成图片':original;
+  }
   return success;
 }
 async function generateAllAssets(button,project){
-  const buttons=Array.from(document.querySelectorAll('.asset-generate[data-has-image="0"]'));
+  const buttons=Array.from(document.querySelectorAll(
+    '.asset-fold-card:not(.is-archived) .asset-generate[data-has-image="0"]'
+  )).filter(item=>!item.disabled);
   if(buttons.length===0){alert('当前没有待生成的普通资产');return;}
   if(!confirm('将顺序生成 '+buttons.length+' 个普通资产，调用图片模型可能产生 API 费用。客户产品与 Logo 不会自动生成，确认继续？'))return;
   button.disabled=true;
@@ -550,7 +738,7 @@ async function generateAllAssets(button,project){
   }
   if(status)status.textContent='批量提交完成，已提交或生成 '+done+' / '+buttons.length+' 项；完成后将自动显示图片。';
   button.disabled=false;
-  if(done>0)window.location.reload();
+  syncAssetTotals();
 }
 async function pollImageAsset(id,project){
   const card=document.getElementById('asset-'+id);
@@ -563,7 +751,11 @@ async function pollImageAsset(id,project){
     if(!r.ok)return;
     const data=await r.json();
     const status=document.getElementById('asset-status-'+id);
-    if(data.status==='ready'){window.location.reload();return;}
+    if(data.status==='ready'){
+      updateAssetPreview(id,data);
+      if(button)button.disabled=false;
+      return;
+    }
     if(data.status==='generating'){
       if(status)status.textContent=data.message||'图片正在服务器生成（'+(data.stage||'等待')+'），请不要重复提交';
       if(button)button.disabled=true;
@@ -579,7 +771,7 @@ const assetProjectId=@json($project->id);
 const imageAssetCards=document.querySelectorAll('.asset-media');
 if(imageAssetCards.length){
   const check=()=>imageAssetCards.forEach(card=>{
-    if(card.dataset.pending==='1')
+    if(card.dataset.pending==='1' && card.closest('.asset-fold-card')?.dataset.archived!=='1')
       pollImageAsset(Number(card.id.replace('asset-','')),assetProjectId);
   });
   check();setInterval(check,4000);

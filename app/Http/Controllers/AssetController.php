@@ -21,42 +21,51 @@ class AssetController
         return [$project,$asset];
     }
 
+    private function saveReply(string $message,array $data,string $fallback)
+    {
+        if(request()->expectsJson())return response()->json(['ok'=>true,'message'=>$message]+$data);
+        return redirect()->to($fallback)->with('ok',$message);
+    }
+
+    private function refused(string $message,string $fallback)
+    {
+        if(request()->expectsJson())return response()->json(['ok'=>false,'message'=>$message],409);
+        return redirect()->to($fallback)->withErrors(['asset'=>$message]);
+    }
+
     public function archive(int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
+        $fallback=route('project.show',$id).'#asset-'.$asset;
         if($project->status==='generating'||$record->image_status==='generating')
-            return redirect()->to(route('project.show',$id).'#assets-panel')
-                ->withErrors(['asset'=>'生成任务运行期间不能移除该资产，请在完成后重试。']);
+            return $this->refused('生成任务运行期间不能折叠资产，请稍后再试。',$fallback);
         DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
             'is_archived'=>true,'updated_at'=>now(),
         ]);
-        return redirect()->to(route('project.show',$id).'#archived-assets')
-            ->with('ok','「'.$record->name.'」已移至已移除资产，图片和提示词均已保留。');
+        return $this->saveReply('已折叠「'.$record->name.'」，图片和提示词均已保留。',
+            ['asset_id'=>$asset,'archived'=>true],$fallback);
     }
 
     public function restore(int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
-        if($project->status==='generating')
-            return redirect()->to(route('project.show',$id).'#archived-assets')
-                ->withErrors(['asset'=>'正在重新生成分镜和资产，请在完成后恢复。']);
+        $fallback=route('project.show',$id).'#asset-'.$asset;
+        if($project->status==='generating'||$record->image_status==='generating')
+            return $this->refused('生成任务运行期间暂时不能恢复资产。',$fallback);
         DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
             'is_archived'=>false,'updated_at'=>now(),
         ]);
-        return redirect()->to(route('project.show',$id).'#asset-'.$asset)
-            ->with('ok','已恢复资产「'.$record->name.'」，原有图片和提示词已保留。');
+        return $this->saveReply('已恢复资产「'.$record->name.'」，原图与提示词保持不变。',
+            ['asset_id'=>$asset,'archived'=>false],$fallback);
     }
 
     public function savePrompt(Request $request,int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
-        $target=route('project.show',$id).'#asset-'.$asset;
-        if($project->status==='generating'||$record->image_status==='generating')
-            return redirect()->to($target)
-                ->withErrors(['prompt'=>'任务运行期间不能修改图片提示词，请完成后再保存。']);
-        if((bool)($record->is_archived??false))
-            return redirect()->to($target)
-                ->withErrors(['prompt'=>'请先恢复已移除的资产再编辑。']);
+        $fallback=route('project.show',$id).'#asset-'.$asset;
+        if($project->status==='generating'||$record->image_status==='generating'||
+            (bool)($record->is_archived??false))
+            return $this->refused('生成中或已折叠的资产暂时不能编辑提示词。',$fallback);
         $value=$request->validate(['prompt'=>'nullable|string|max:30000']);
         $prompt=trim((string)($value['prompt']??''));
         DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
@@ -64,45 +73,65 @@ class AssetController
             'prompt_override'=>$prompt!=='',
             'updated_at'=>now(),
         ]);
-        return redirect()->to($target)->with('ok',
-            $prompt===''?'已恢复此资产的类别模板。':'该资产提示词已保存，下次生成图片时使用手动版本。');
+        $updated=DB::table('assets')->where('id',$asset)->where('project_id',$id)->first();
+        return $this->saveReply(
+            $prompt===''?'已恢复此资产的类别提示词。':'该资产提示词已保存，下次生成图片时使用。',
+            ['asset_id'=>$asset,'prompt'=>AssetImagePrompt::build($project,$updated),
+                'prompt_override'=>(bool)$updated->prompt_override],$fallback);
     }
 
     public function resetPrompt(int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
-        $target=route('project.show',$id).'#asset-'.$asset;
-        if($project->status==='generating'||$record->image_status==='generating')
-            return redirect()->to($target)->withErrors(['prompt'=>'生成任务运行期间无法恢复提示词。']);
+        $fallback=route('project.show',$id).'#asset-'.$asset;
+        if($project->status==='generating'||$record->image_status==='generating'||
+            (bool)($record->is_archived??false))
+            return $this->refused('生成中或已折叠的资产暂时不能恢复提示词。',$fallback);
         DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
             'prompt_override'=>false,'updated_at'=>now(),
         ]);
-        return redirect()->to($target)->with('ok','已恢复该资产使用的类别模板。');
+        $updated=DB::table('assets')->where('id',$asset)->where('project_id',$id)->first();
+        return $this->saveReply('已恢复该资产使用的类别模板。',
+            ['asset_id'=>$asset,'prompt'=>AssetImagePrompt::build($project,$updated),
+                'prompt_override'=>false],$fallback);
     }
 
     public function frameRatio(Request $request,int $id,int $asset)
     {
-        [,$record]=$this->find($id,$asset);
+        [$project,$record]=$this->find($id,$asset);
+        $fallback=route('project.show',$id).'#asset-'.$asset;
         $data=$request->validate([
             'frame_ratio'=>['required',\Illuminate\Validation\Rule::in(['inherit','landscape','portrait','square'])],
         ]);
-        if($record->image_status==='generating')
-            return back()->withErrors(['frame_ratio'=>'图片任务正在运行，请在完成后再修改下次生成所用比例']);
+        if($project->status==='generating'||$record->image_status==='generating'||
+            (bool)($record->is_archived??false))
+            return $this->refused('生成中或已折叠的资产暂时不能修改画幅。',$fallback);
         DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
             'frame_ratio'=>$data['frame_ratio'],'updated_at'=>now(),
         ]);
-        return back()->with('ok','该资产的图片画幅已保存，下一次生成时生效；已下载的原图不会被裁切。');
+        $updated=DB::table('assets')->where('id',$asset)->where('project_id',$id)->first();
+        return $this->saveReply('画幅已保存，下次生成图片时生效。',
+            ['asset_id'=>$asset,'frame_ratio'=>$data['frame_ratio'],
+                'prompt'=>AssetImagePrompt::build($project,$updated),
+                'prompt_override'=>(bool)$updated->prompt_override],$fallback);
     }
 
     public function upload(Request $request,int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
+        if($project->status==='generating'||$record->image_status==='generating'||
+            (bool)($record->is_archived??false))
+            return $this->refused('生成中或已折叠的资产暂时不能上传图片。',
+                route('project.show',$id).'#asset-'.$asset);
         $request->validate(['image'=>'required|file|mimes:png,jpg,jpeg,webp|max:10240']);
         $file=$request->file('image');
         $info=@getimagesize($file->getRealPath());
         if(!$info||!in_array($info['mime']??'',['image/png','image/jpeg','image/webp'],true)||
-            $info[0]>8192||$info[1]>8192)
-            return back()->withErrors(['image'=>'图片必须是真实 JPG/PNG/WebP 文件，长宽不超过 8192 像素']);
+            $info[0]>8192||$info[1]>8192) {
+            $message='图片必须是真实 JPG/PNG/WebP 文件，长宽不超过 8192 像素';
+            if($request->expectsJson())return response()->json(['ok'=>false,'message'=>$message],422);
+            return back()->withErrors(['image'=>$message]);
+        }
         $extension=match($info['mime']) {
             'image/png'=>'png','image/jpeg'=>'jpg','image/webp'=>'webp',
         };
@@ -115,7 +144,12 @@ class AssetController
             'image_task_id'=>null,'image_remote_status'=>null,'image_poll_after'=>null,
             'image_resume_attempted'=>false,'updated_at'=>now(),
         ]);
-        return back()->with('ok','已保存客户上传的真实参考素材：'.$record->name);
+        return $this->saveReply('已保存客户上传的真实参考素材：'.$record->name,
+            ['asset_id'=>$asset,'has_image'=>true,
+                'image_url'=>route('asset.file',[$id,$asset]),
+                'thumbnail_url'=>route('asset.thumbnail',[$id,$asset]),
+                'download_url'=>route('asset.download',[$id,$asset])],
+            route('project.show',$id).'#asset-'.$asset);
     }
 
     private function imageError(int $id,int $asset,\Throwable $e):string
@@ -230,7 +264,12 @@ class AssetController
                     'image_error'=>null,'updated_at'=>now(),
                 ]);
             if(!$updated){Storage::disk('local')->delete($path);return response()->json(['status'=>'cancelled'],409);}
-            return response()->json(['status'=>'ready','image_url'=>route('asset.file',[$id,$asset])]);
+            return response()->json([
+                'status'=>'ready',
+                'image_url'=>route('asset.file',[$id,$asset]),
+                'thumbnail_url'=>route('asset.thumbnail',[$id,$asset]),
+                'download_url'=>route('asset.download',[$id,$asset]),
+            ]);
         }catch(\Throwable $e){
             $message=$this->imageError($id,$asset,$e);
             DB::table('assets')->where('id',$asset)->where('project_id',$id)
@@ -364,6 +403,9 @@ class AssetController
                 ?$a->image_error:null,
             'error'=>$a->image_status==='error'?$a->image_error:null,
             'has_image'=>!empty($a->file_path),
+            'image_url'=>$a->file_path?route('asset.file',[$a->project_id,$a->id]):null,
+            'thumbnail_url'=>$a->file_path?route('asset.thumbnail',[$a->project_id,$a->id]):null,
+            'download_url'=>$a->file_path?route('asset.download',[$a->project_id,$a->id]):null,
             'task_id'=>$a->image_task_id??null,
         ]);
     }
