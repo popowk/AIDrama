@@ -20,6 +20,20 @@ class AssetController
         return [$project,$asset];
     }
 
+    public function frameRatio(Request $request,int $id,int $asset)
+    {
+        [,$record]=$this->find($id,$asset);
+        $data=$request->validate([
+            'frame_ratio'=>['required',\Illuminate\Validation\Rule::in(['inherit','landscape','portrait','square'])],
+        ]);
+        if($record->image_status==='generating')
+            return back()->withErrors(['frame_ratio'=>'图片任务正在运行，请在完成后再修改下次生成所用比例']);
+        DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
+            'frame_ratio'=>$data['frame_ratio'],'updated_at'=>now(),
+        ]);
+        return back()->with('ok','该资产的图片画幅已保存，下一次生成时生效；已下载的原图不会被裁切。');
+    }
+
     public function upload(Request $request,int $id,int $asset)
     {
         [$project,$record]=$this->find($id,$asset);
