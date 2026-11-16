@@ -86,16 +86,16 @@ PROMPT,
 
     public static function active(string $kind):string
     {
-        return self::mode($kind)==='custom'&&trim(self::custom($kind))!==''
-            ?self::custom($kind):self::reference($kind);
+        // Selecting an empty custom prompt means no extra prompt instructions.
+        // Never silently inject the reference text in this mode.
+        return self::mode($kind)==='custom' ? self::custom($kind) : self::reference($kind);
     }
 
     public static function save(string $kind,string $mode,string $reference,string $custom):void
     {
         self::ensure($kind);
-        if(!in_array($mode,['reference','custom'],true)||trim($reference)===''||
-           ($mode==='custom'&&trim($custom)===''))
-            throw ValidationException::withMessages(['prompt'=>'请填写默认参考提示词；自定义模式必须有提示词']);
+        if(!in_array($mode,['reference','custom'],true)||trim($reference)==='')
+            throw ValidationException::withMessages(['prompt'=>'请填写默认参考提示词']);
         DB::transaction(function()use($kind,$mode,$reference,$custom) {
             foreach(['mode'=>$mode,'reference'=>$reference,'custom'=>$custom] as $field=>$value)
                 DB::table('settings')->updateOrInsert(
