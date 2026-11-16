@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AssetOrigin;
+use App\Services\AssetImagePrompt;
 use App\Services\ImageEngine;
 use App\Services\ChatgptImageTasks;
 use Illuminate\Http\Request;
@@ -18,6 +19,65 @@ class AssetController
         $asset=DB::table('assets')->where('id',$assetId)->where('project_id',$projectId)->first();
         if(!$project||!$asset)abort(404);
         return [$project,$asset];
+    }
+
+    public function archive(int $id,int $asset)
+    {
+        [$project,$record]=$this->find($id,$asset);
+        if($project->status==='generating'||$record->image_status==='generating')
+            return redirect()->to(route('project.show',$id).'#assets-panel')
+                ->withErrors(['asset'=>'生成任务运行期间不能移除该资产，请在完成后重试。']);
+        DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
+            'is_archived'=>true,'updated_at'=>now(),
+        ]);
+        return redirect()->to(route('project.show',$id).'#archived-assets')
+            ->with('ok','「'.$record->name.'」已移至已移除资产，图片和提示词均已保留。');
+    }
+
+    public function restore(int $id,int $asset)
+    {
+        [$project,$record]=$this->find($id,$asset);
+        if($project->status==='generating')
+            return redirect()->to(route('project.show',$id).'#archived-assets')
+                ->withErrors(['asset'=>'正在重新生成分镜和资产，请在完成后恢复。']);
+        DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
+            'is_archived'=>false,'updated_at'=>now(),
+        ]);
+        return redirect()->to(route('project.show',$id).'#asset-'.$asset)
+            ->with('ok','已恢复资产「'.$record->name.'」，原有图片和提示词已保留。');
+    }
+
+    public function savePrompt(Request $request,int $id,int $asset)
+    {
+        [$project,$record]=$this->find($id,$asset);
+        $target=route('project.show',$id).'#asset-'.$asset;
+        if($project->status==='generating'||$record->image_status==='generating')
+            return redirect()->to($target)
+                ->withErrors(['prompt'=>'任务运行期间不能修改图片提示词，请完成后再保存。']);
+        if((bool)($record->is_archived??false))
+            return redirect()->to($target)
+                ->withErrors(['prompt'=>'请先恢复已移除的资产再编辑。']);
+        $value=$request->validate(['prompt'=>'nullable|string|max:30000']);
+        $prompt=trim((string)($value['prompt']??''));
+        DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
+            'prompt'=>$prompt!==''?$prompt:$record->prompt,
+            'prompt_override'=>$prompt!=='',
+            'updated_at'=>now(),
+        ]);
+        return redirect()->to($target)->with('ok',
+            $prompt===''?'已恢复此资产的类别模板。':'该资产提示词已保存，下次生成图片时使用手动版本。');
+    }
+
+    public function resetPrompt(int $id,int $asset)
+    {
+        [$project,$record]=$this->find($id,$asset);
+        $target=route('project.show',$id).'#asset-'.$asset;
+        if($project->status==='generating'||$record->image_status==='generating')
+            return redirect()->to($target)->withErrors(['prompt'=>'生成任务运行期间无法恢复提示词。']);
+        DB::table('assets')->where('id',$asset)->where('project_id',$id)->update([
+            'prompt_override'=>false,'updated_at'=>now(),
+        ]);
+        return redirect()->to($target)->with('ok','已恢复该资产使用的类别模板。');
     }
 
     public function frameRatio(Request $request,int $id,int $asset)
@@ -76,6 +136,8 @@ class AssetController
     public function generate(int $id,int $asset,ImageEngine $engine)
     {
         [$project,$record]=$this->find($id,$asset);
+        if((bool)($record->is_archived??false))
+            return response()->json(['error'=>'此资产已移除，请先恢复再生成图片。'],422);
         if(AssetOrigin::needsUpload($record->type,$record->name,
             (string)$record->description,$record->source_kind))
             return response()->json(['error'=>'Logo、客户产品及具体型号必须上传真实参考图，不能 AI 生成'],422);

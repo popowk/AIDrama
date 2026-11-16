@@ -84,7 +84,7 @@
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
 <div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
 <p class="hint">时长依据中文台词字符与开口前动作估算，不等同真实配音时长；超过上限的台词会继续拆分为连续镜头。</p>
-<div class="section-heading space"><h2>03 / 资产清单</h2>
+<div class="section-heading space" id="assets-panel"><h2>03 / 资产清单</h2>
 @if($assets->contains(fn($a)=>$a->source_kind==='generate'))
 <button class="button ghost" type="button" onclick="generateAllAssets(this,{{ $project->id }})">一键生成普通资产图</button>
 @else<span class="muted">真实上传 / AI 生成</span>@endif
@@ -103,7 +103,17 @@
 @if($a->voice_description)<p class="muted small">声音设定：{{ $a->voice_description }}</p>@endif
 <p class="muted small asset-status" id="asset-status-{{ $a->id }}">@if($a->file_path){{ $a->source_kind==='upload'?'已上传真实参考图':'AI 图片已生成' }}@elseif($a->source_kind==='upload')待客户上传原图@else{{ ['pending'=>'待生成','generating'=>'异步生成中，自动查询结果','error'=>'生成失败，可查看原因后重试'][$a->image_status]??$a->image_status }}@endif</p>
 @if($a->image_status==='error'&&$a->image_error)<p class="muted small">{{ $a->image_error }}</p>@endif
-<details><summary>查看资产生图提示词</summary><textarea rows="3" readonly>{{ $a->prompt }}</textarea></details>
+<details class="asset-prompt-editor" @if(session('open_asset_prompt')===$a->id) open @endif>
+<summary>{{ ($a->prompt_override??false)?'编辑手动生图提示词':'查看 / 编辑生图提示词' }} <span class="muted small">· {{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}模板{{ ($a->prompt_override??false)?'（单资产覆盖中）':'' }}</span></summary>
+<p class="hint">默认从模型设置中读取{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??'道具' }}专用提示词。此处保存后仅覆盖当前资产，不影响其他资产；留空保存将恢复类别模板。</p>
+<form method="post" action="{{ route('asset.prompt.save',[$project->id,$a->id]) }}" class="asset-prompt-form">@csrf
+<label class="small">实际传给图片模型的提示词
+<textarea name="prompt" rows="7" maxlength="30000" @disabled($a->image_status==='generating'||$project->status==='generating')>{{ \App\Services\AssetImagePrompt::build($project,$a) }}</textarea></label>
+<button class="button outline" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>保存该资产提示词</button>
+</form>
+<form method="post" action="{{ route('asset.prompt.reset',[$project->id,$a->id]) }}" class="asset-prompt-reset">@csrf
+<button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>恢复使用类别提示词</button></form>
+</details>
 <div class="asset-buttons">
 <form method="post" action="{{ route('asset.frameRatio',[$project->id,$a->id]) }}" class="asset-ratio-form">
 @csrf
@@ -116,6 +126,8 @@
 </select></label>
 <button class="button ghost" type="submit" @disabled($a->image_status==='generating')>保存画幅</button>
 </form>
+<form method="post" action="{{ route('asset.archive',[$project->id,$a->id]) }}" class="asset-archive-form" onsubmit="return confirm('将此资产移至“已移除资产”？原图、提示词和生成记录都会保留，可以随时恢复。')">@csrf
+<button class="button ghost" type="submit" @disabled($a->image_status==='generating'||$project->status==='generating')>移除资产（可恢复）</button></form>
 @if($a->source_kind==='upload')
 <form action="{{ route('asset.upload',[$project->id,$a->id]) }}" method="post" enctype="multipart/form-data" class="asset-upload">@csrf
 <label class="small">客户真实素材（PNG/JPG/WebP，≤10MB）<input name="image" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required></label>
@@ -145,7 +157,21 @@
 </div>
 </div>
 @endforeach
-@else<div class="empty small">生成分镜后自动提取人物、场景和道具，并判断哪些必须上传原图。</div>@endif
+@else<div class="empty small">目前没有正在使用的资产。已移除资产可在下面恢复。</div>@endif
+<div class="archived-asset-workspace" id="archived-assets">
+<details @if($archivedAssets->count()) open @endif>
+<summary>已移除资产（{{ $archivedAssets->count() }}）<span class="muted small">不参与批量生图和提示词引用，可随时恢复，原图不删除</span></summary>
+@if($archivedAssets->count())
+@foreach($archivedAssets as $a)
+<div class="archived-asset-row" id="archived-asset-{{ $a->id }}">
+<div><strong>{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }} · {{ $a->name }}</strong>
+<p class="hint">{{ $a->file_path?'已保存原图 · ':'' }}{{ ($a->prompt_override??false)?'独立提示词已保存':'使用类别提示词' }} · {{ $a->description }}</p></div>
+<form method="post" action="{{ route('asset.restore',[$project->id,$a->id]) }}">@csrf
+<button class="button outline" type="submit" @disabled($project->status==='generating')>恢复资产</button>
+</form></div>
+@endforeach
+@else<p class="hint">暂无已移除资产。</p>@endif
+</details></div>
 </section></div>
 <dialog id="asset-lightbox" class="asset-lightbox" aria-label="资产图片大图预览">
     <div class="asset-lightbox-head">

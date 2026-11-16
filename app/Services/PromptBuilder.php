@@ -33,7 +33,7 @@ class PromptBuilder
             "目标时长：{$shot->duration_seconds} 秒，实际遵循所使用视频模型支持的时长。\n".
             "要求：镜头动作与台词时间顺序准确，人物形象、服装和场景连贯。";
         $assets=DB::table('assets')->where('project_id',$project->id)
-            ->where('source_kind','upload')->orderBy('id')->get(['name','file_path']);
+            ->where('source_kind','upload')->where('is_archived',false)->orderBy('id')->get(['name','file_path']);
         if($assets->isNotEmpty()) {
             $body.="\n真实品牌/产品素材（严禁 AI 自行复原）：";
             foreach($assets as $a)

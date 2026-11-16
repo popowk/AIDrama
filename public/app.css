@@ -123,3 +123,22 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 
 /* Keep final shot/asset generation actions below all editable script segments. */
 .post-script-generation{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+
+/* Assets can be hidden reversibly; each can override its type's image prompt. */
+#assets-panel,#archived-assets,[id^="asset-"]{scroll-margin-top:85px}
+.asset-prompt-editor{margin:13px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(20,31,52,.48)}
+.asset-prompt-editor summary{margin:0;display:block;color:#b8c9ff}
+.asset-prompt-editor textarea{line-height:1.6;min-height:130px}
+.asset-prompt-form{display:flex;flex-direction:column;gap:9px;padding-top:10px}
+.asset-prompt-form button{align-self:flex-start}
+.asset-prompt-reset{margin-top:7px}
+.asset-archive-form{margin:10px 0}
+.asset-archive-form .button{font-size:12px;border-color:#65506a;color:#e9b6c8}
+.archived-asset-workspace{border-top:1px solid var(--line);padding-top:18px;margin-top:18px}
+.archived-asset-workspace summary{cursor:pointer;color:#b8c9ff;font-weight:650}
+.archived-asset-workspace summary .muted{font-weight:400;margin-left:8px}
+.archived-asset-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}
+.archived-asset-row div{min-width:0;flex:1}
+.archived-asset-row .hint{overflow-wrap:anywhere;max-height:3.5em;overflow:hidden}
+.archived-asset-row form{flex-shrink:0}
+@media(max-width:540px){.archived-asset-row{align-items:flex-start;flex-direction:column}.archived-asset-workspace summary .muted{display:block;margin:3px 0}}

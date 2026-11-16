@@ -76,13 +76,15 @@ class StudioController
     public function show(int $id) {
         $project=$this->project($id);
         $shots=DB::table('shots')->where('project_id',$id)->orderBy('sequence')->get();
-        $assets=DB::table('assets')->where('project_id',$id)->orderBy('type')->orderBy('id')->get();
+        $allAssets=DB::table('assets')->where('project_id',$id)->orderBy('type')->orderBy('id')->get();
+        $assets=$allAssets->filter(static fn($a)=>!(bool)($a->is_archived??false))->values();
+        $archivedAssets=$allAssets->filter(static fn($a)=>(bool)($a->is_archived??false))->values();
         $total=$shots->sum('duration_seconds');
         $stylePresets=CreativeLibrary::styles();
         $creativeSkills=CreativeLibrary::skills();
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments'));
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -363,7 +365,13 @@ class StudioController
                     $key=$asset['type'].'|'.$asset['name'];
                     $included[$key]=true;
                     $old=$previous->get($key);
-                    if($old)$asset['frame_ratio']=$old->frame_ratio??'inherit';
+                    if($old){
+                        $asset['id']=$old->id;
+                        $asset['frame_ratio']=$old->frame_ratio??'inherit';
+                        $asset['is_archived']=(bool)($old->is_archived??false);
+                        $asset['prompt_override']=(bool)($old->prompt_override??false);
+                        if($asset['prompt_override'])$asset['prompt']=$old->prompt;
+                    }
                     if($old &&
                         ($old->file_path || ($old->image_task_id && $old->image_status==='generating')) &&
                         ($old->source_kind==='upload' || ($asset['source_kind']??'generate')==='generate')) {
@@ -381,16 +389,28 @@ class StudioController
                         'project_id'=>$id,'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
-                // Keep uploads even if the new AI response omitted that brand asset.
+                // Keep archived assets recoverable even when the new model
+                // omits them. Continue retaining genuine uploaded brand assets.
                 foreach($previous as $key=>$old) {
-                    if(isset($included[$key])||$old->source_kind!=='upload'||!$old->file_path)continue;
+                    if(isset($included[$key]))continue;
+                    $archived=(bool)($old->is_archived??false);
+                    if(!$archived&&($old->source_kind!=='upload'||!$old->file_path))continue;
                     DB::table('assets')->insert([
-                        'project_id'=>$id,'type'=>$old->type,'name'=>$old->name,
+                        'id'=>$old->id,'project_id'=>$id,'type'=>$old->type,'name'=>$old->name,
                         'description'=>$old->description,'prompt'=>$old->prompt,
+                        'prompt_override'=>(bool)($old->prompt_override??false),
+                        'is_archived'=>$archived,
                         'voice_description'=>$old->voice_description,
-                        'source_kind'=>'upload','image_status'=>'uploaded',
+                        'source_kind'=>$old->source_kind,'image_status'=>$old->image_status,
                         'frame_ratio'=>$old->frame_ratio??'inherit',
-                        'file_path'=>$old->file_path,'created_at'=>now(),'updated_at'=>now(),
+                        'file_path'=>$old->file_path,
+                        'image_task_id'=>$old->image_task_id??null,
+                        'image_remote_status'=>$old->image_remote_status??null,
+                        'image_started_at'=>$old->image_started_at??null,
+                        'image_poll_after'=>$old->image_poll_after??null,
+                        'image_resume_attempted'=>$old->image_resume_attempted??false,
+                        'image_error'=>$old->image_error??null,
+                        'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
                 DB::table('generation_jobs')->where('id',$job->id)->update([
@@ -443,7 +463,8 @@ class StudioController
     public function settings() {
         $rows=DB::table('settings')->where('key','like','ai.%')->pluck('value','key');
         $prompts=[];
-        foreach(PromptPresets::LABELS as $kind=>$label) {
+        foreach(PromptPresets::VISIBLE_KINDS as $kind) {
+            $label=PromptPresets::LABELS[$kind];
             $prompts[$kind]=[
                 'label'=>$label,'mode'=>PromptPresets::mode($kind),
                 'reference'=>PromptPresets::reference($kind),

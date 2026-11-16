@@ -53,6 +53,7 @@ jobs:
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php artisan migrate --force
           php tests/storyboard-table-smoke.php
           php tests/project-generation-layout-smoke.php
+          DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/asset-controls-smoke.php
           node tests/storyboard-state.test.cjs
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/prompt-optional-smoke.php
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/storyboard-async-smoke.php

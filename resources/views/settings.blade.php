@@ -37,8 +37,8 @@
 <button class="button primary wide" type="submit">保存图片模型</button></form></section>
 </div>
 
-<div class="section-heading space"><div><div class="eyebrow">PROMPT STUDIO</div><h2>03 / 提示词管理</h2></div><span class="muted small">4 类模板 · 参考和自定义均可修改</span></div>
-<p class="muted">默认参考词依据开源工作流和服务商公开指南整理，并非厂商逐字官方模板。你可以编辑参考词、编辑自定义词，选择当前生效版本，或恢复内置参考默认值。</p>
+<div class="section-heading space"><div><div class="eyebrow">PROMPT STUDIO</div><h2>03 / 提示词管理</h2></div><span class="muted small">6 类独立模板 · 按资产类别调用</span></div>
+<p class="muted">图片提示词按“人物 / 场景 / 道具”分开设置：对应类型的资产自动调用对应模板。每类可以单独选择参考版或自定义版，彼此互不影响；单个资产也能再单独覆盖。旧通用图片模板保留历史数据但不再参与生图。</p>
 <div class="model-settings-grid prompt-settings-grid">
 @foreach($prompts as $kind=>$item)
 <section class="panel prompt-settings-panel">
