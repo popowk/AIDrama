@@ -58,6 +58,7 @@ jobs:
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/inline-saves-smoke.php
           node tests/inline-settings-ui.test.cjs
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/inline-settings-smoke.php
+          DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/short-video-mode-smoke.php
           node tests/storyboard-state.test.cjs
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/prompt-optional-smoke.php
           DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=aidrama_ci DB_USERNAME=root DB_PASSWORD=aidrama-ci-only php tests/storyboard-async-smoke.php
