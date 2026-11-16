@@ -482,7 +482,23 @@ class StudioController
         $project=$this->project($id);
         $item=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
         if (!$item) abort(404);
-        $v=$request->validate(['target'=>['required',Rule::in(['kling','seedance','stable-diffusion'])]]);
+        $v=$request->validate([
+            'target'=>['required',Rule::in(['kling','seedance','stable-diffusion'])],
+        ]);
+        // Use the current editor values when provided, without changing the
+        // saved shot. This avoids generating stale prompts for unsaved edits.
+        if($request->has('visual')) {
+            $editing=$request->validate([
+                'title'=>'required|string|max:191',
+                'visual'=>'required|string|max:20000',
+                'action_before'=>'nullable|string|max:5000',
+                'dialogue'=>'nullable|string|max:20000',
+                'delivery'=>['required',Rule::in(['on_camera','voiceover','none'])],
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+            $item=clone $item;
+            foreach($editing as $field=>$value)$item->$field=$value;
+        }
         try {
             return response()->json(['target'=>$v['target'],
                 'prompt'=>$builder->generate($project,$item,$v['target'])]);
