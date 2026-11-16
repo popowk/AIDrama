@@ -153,7 +153,7 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 - 如果上游始终找不到已经提交的任务，AIDrama 会保留原任务 ID 和错误提示，不能据此认定模型未生成。先通过 chatgpt2api 的任务页面确认，不要反复点击重新生成。
 - 兼容其他仅有 \`/v1/images/generations\` 的图片服务时，手动切换为「通用 OpenAI 兼容 · 同步生成」。该兼容模式不会拥有 chatgpt2api 的异步结果找回能力。
 
-**注意：** 为防止服务器端请求伪造，返回图片 URL 必须使用与 AIDrama 图片 API Base URL **相同的公网 HTTPS 域名**，并位于 \`/images/\`（默认图片存储）或 \`/files/\` 目录。chatgpt2api 的 \`image_storage.public_base_url\` 可能让图片使用另一域名，此时需先在上游设置与图片 API 一致的可信公网域名，不能关闭 AIDrama 的域名校验。Laravel、MySQL 和私有素材目录均不因切换模式而删除或清空。
+**注意：** 为防止服务器端请求伪造，AIDrama 仅从已配置图片 API 的 **公网 HTTPS 主机**下载图片。上游返回同域名 HTTP 链接、反代泄露的 \`localhost:3000\` / 私有 IP URL 或以 \`/images/\` 开头的相对链接时，会先校验路径后转换到配置的 HTTPS 主机。仅允许 \`/images/\` 或 \`/files/\` 图片路径，不跟随跨域跳转；对于陌生第三方公网域名或其他路径仍拒绝下载。若 chatgpt2api 的 \`image_storage.public_base_url\` 指向不同的公网域名，应调整该设置而不是关闭安全校验。Laravel、MySQL 和私有素材目录均不因切换模式而删除或清空。
 
 ### HTTP 500：Target class [view] does not exist
 
