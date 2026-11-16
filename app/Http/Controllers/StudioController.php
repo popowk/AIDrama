@@ -84,10 +84,24 @@ class StudioController
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
         return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments'));
     }
+    public function previewStoryboard(Request $request,int $id) {
+        $this->project($id);
+        $v=$request->validate(['storyboard_source'=>'required|string|max:100000']);
+        try { $rows=StoryboardTable::parse($v['storyboard_source']); }
+        catch(RuntimeException $e) {
+            throw ValidationException::withMessages(['storyboard_source'=>$e->getMessage()]);
+        }
+        return response()->json([
+            'count'=>count($rows),
+            'rows'=>array_slice($rows,0,5),
+            'message'=>'成功识别 '.count($rows).' 个分镜',
+        ]);
+    }
+
     public function update(Request $request,int $id) {
         $project=$this->project($id);
         if(DB::table('projects')->where('id',$id)->value('status')==='generating')
-            return back()->withErrors(['script'=>'模型正在处理剧本，请完成或重试任务后再修改。']);
+            throw ValidationException::withMessages(['script'=>'模型正在处理剧本，请完成或重试任务后再修改。']);
         $v=$request->validate([
             'name'=>'required|string|max:191','script'=>'nullable|string|max:100000',
             'input_kind'=>['sometimes',Rule::in(['script','storyboard'])],
@@ -131,6 +145,16 @@ class StudioController
             $v['creative_skills']=json_encode(CreativeLibrary::skillIds($v['skill_keys']??[]));
         unset($v['skills_present'],$v['skill_keys']);
         DB::table('projects')->where('id',$id)->update($v+['updated_at'=>now()]);
+        if($request->expectsJson()) {
+            $updated=$this->project($id);
+            return response()->json([
+                'ok'=>true,'message'=>'剧本设置已保存',
+                'storyboard_source'=>$updated->storyboard_source??'',
+                'input_kind'=>$updated->input_kind??'script',
+                'storyboard_dirty'=>(bool)($updated->storyboard_dirty??false),
+                'has_script'=>trim((string)$updated->script)!=='',
+            ]);
+        }
         return redirect()->to(route('project.show',$id).'#script-editor')->with('ok','剧本设置已保存');
     }
     public function generate(int $id) {
