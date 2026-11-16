@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AIDrama 官方组合式文字创作技能；不会运行 Python/Shell 等外部代码",
   "items": {
     "continuity": {
