@@ -133,7 +133,7 @@ class StoryboardEngine
             if ($dialogue==='' && $estimated>$limit) $parts=array_fill(0,(int)ceil($estimated/$limit),'');
             foreach ($parts as $i=>$part) {
                 $partPre=$i===0?$pre:'';
-                $spoken=preg_replace('/(?:^|\\n)[^\\n：:]{1,25}[：:]/u',"\\n",$part);
+                $spoken=preg_replace('/(^|\R)[^\r\n：:]{1,25}[：:]/u','$1',$part);
                 $duration=$part!==''?max(3,(int)ceil(mb_strlen(preg_replace('/[\\s，。！？!?、；：:“”"‘’]/u','',$spoken))/3.5)+($partPre!==''?3:($short?0:1))):(int)ceil($estimated/count($parts));
                 $duration=min($limit,max(3,$duration));
                 $shotTitle=$title.(count($parts)>1?' · '.($i+1).'/'.count($parts):'');
@@ -189,20 +189,48 @@ class StoryboardEngine
         return $combined;
     }
 
-    private function splitDialogue(string $text,int $maxChars): array
+    private function splitDialogue(string $text,int $maxChars):array
     {
-        if (mb_strlen($text)<=$maxChars) return [$text];
-        $sentences=preg_split('/(?<=[。！？!?；;])\\s*/u',$text,-1,PREG_SPLIT_NO_EMPTY)?:[$text];
-        $parts=[];$buffer='';
-        foreach($sentences as $s) {
-            while(mb_strlen($s)>$maxChars) {
-                if ($buffer!=='') { $parts[]=$buffer; $buffer=''; }
-                $parts[]=mb_substr($s,0,$maxChars); $s=mb_substr($s,$maxChars);
+        if(mb_strlen($text)<=$maxChars)return [$text];
+        // For alternating speakers preserve the name on every split segment.
+        // Never let a sentence boundary silently transfer lines to another voice.
+        $lines=preg_split('/\R/u',$text,-1,PREG_SPLIT_NO_EMPTY);
+        if(count($lines)>1 && preg_match('/^[^\r\n：:]{1,25}[：:]/u',trim($lines[0]))){
+            $chunks=[];$buffer='';
+            foreach($lines as $line){
+                $line=trim($line);
+                if($line==='')continue;
+                if(preg_match('/^([^：:\r\n]{1,25}[：:])\s*(.*)$/us',$line,$match)){
+                    $prefix=$match[1];$remaining=$match[2];
+                    $width=max(6,$maxChars-mb_strlen($prefix));
+                    do{
+                        $part=$prefix.mb_substr($remaining,0,$width);
+                        $remaining=mb_substr($remaining,$width);
+                        if(mb_strlen($buffer."\n".$part)>$maxChars&&$buffer!==''){
+                            $chunks[]=$buffer;$buffer='';
+                        }
+                        $buffer.=($buffer!==''?"\n":'').$part;
+                    }while($remaining!=='');
+                }else{
+                    if($buffer!==''){$chunks[]=$buffer;$buffer='';}
+                    $chunks[]=$line;
+                }
             }
-            if (mb_strlen($buffer.$s)>$maxChars && $buffer!=='') { $parts[]=$buffer; $buffer=''; }
-            $buffer.=$s;
+            if($buffer!=='')$chunks[]=$buffer;
+            return $chunks?:[$text];
         }
-        if ($buffer!=='') $parts[]=$buffer;
+        $sentences=preg_split('/(?<=[。！？!?；;])\s*/u',$text,-1,PREG_SPLIT_NO_EMPTY)?:[$text];
+        $parts=[];$buffer='';
+        foreach($sentences as $sentence){
+            while(mb_strlen($sentence)>$maxChars){
+                if($buffer!==''){$parts[]=$buffer;$buffer='';}
+                $parts[]=mb_substr($sentence,0,$maxChars);
+                $sentence=mb_substr($sentence,$maxChars);
+            }
+            if(mb_strlen($buffer.$sentence)>$maxChars&&$buffer!==''){$parts[]=$buffer;$buffer='';}
+            $buffer.=$sentence;
+        }
+        if($buffer!=='')$parts[]=$buffer;
         return $parts?:[$text];
     }
 
