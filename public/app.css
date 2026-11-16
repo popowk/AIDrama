@@ -89,3 +89,14 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .library-update-desc{flex:1;min-width:220px}.library-update-desc strong{font-size:14px}
 .library-update-desc p{margin:3px 0}.library-update-row .button{min-width:66px}
 @media(max-width:540px){.creative-skill-options{grid-template-columns:1fr}.library-update-row{gap:7px}.library-update-row .button{padding:7px 10px}}
+
+/* Dynamic style/model controls must honor the HTML hidden attribute even
+   though the standard form styles set label/select to display:block. */
+[hidden]{display:none!important}
+.model-discovery-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.model-discovery-controls .model-detect{white-space:nowrap;flex-shrink:0}
+.model-discovery-controls .model-detected-list{flex:1 1 230px;min-width:180px;width:auto;margin:0}
+.model-discovery-controls .model-show-all{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;cursor:pointer}
+.model-show-all input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:#91a7ff}
+.model-discovery-state{min-height:1.4em}
+@media(max-width:540px){.model-discovery-controls .model-detected-list{flex-basis:100%}.model-discovery-controls{align-items:stretch}}
