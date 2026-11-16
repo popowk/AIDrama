@@ -49,6 +49,8 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/settings/prompts',[StudioController::class,'savePromptSettings'])->name('settings.prompts.save');
     Route::post('/settings/prompts/{kind}/reset',[StudioController::class,'resetPromptSettings'])
         ->where('kind','script|image|kling|seedance')->name('settings.prompts.reset');
+    Route::post('/projects/{id}/assets/{asset}/frame-ratio',[AssetController::class,'frameRatio'])
+        ->whereNumber('id')->whereNumber('asset')->name('asset.frameRatio');
     Route::post('/projects/{id}/assets/{asset}/upload',[AssetController::class,'upload'])
         ->whereNumber('id')->whereNumber('asset')->name('asset.upload');
     Route::post('/projects/{id}/assets/{asset}/generate',[AssetController::class,'generate'])
