@@ -127,8 +127,11 @@ class AssetController
         $file=$request->file('image');
         $info=@getimagesize($file->getRealPath());
         if(!$info||!in_array($info['mime']??'',['image/png','image/jpeg','image/webp'],true)||
-            $info[0]>8192||$info[1]>8192)
-            return back()->withErrors(['image'=>'图片必须是真实 JPG/PNG/WebP 文件，长宽不超过 8192 像素']);
+            $info[0]>8192||$info[1]>8192) {
+            $message='图片必须是真实 JPG/PNG/WebP 文件，长宽不超过 8192 像素';
+            if($request->expectsJson())return response()->json(['ok'=>false,'message'=>$message],422);
+            return back()->withErrors(['image'=>$message]);
+        }
         $extension=match($info['mime']) {
             'image/png'=>'png','image/jpeg'=>'jpg','image/webp'=>'webp',
         };
