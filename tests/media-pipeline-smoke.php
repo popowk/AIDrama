@@ -182,6 +182,38 @@ $recovered=$controller->status($id,$uncertain)->getData(true);
 assertMedia($recovered['status']==='ready'&&$lostSubmits===1,'recover 524 via task lookup without duplicate paid submission');
 Storage::disk('local')->delete(DB::table('assets')->where('id',$uncertain)->value('file_path'));
 
+// Production chatgpt2api 3.x returns results[0].url, not only b64_json.
+// Verify safe same-host file fetch as well as private AIDrama persistence.
+$urlScene=DB::table('assets')->insertGetId([
+    'project_id'=>$id,'type'=>'scene','name'=>'远景花园','description'=>'清晨花园',
+    'source_kind'=>'generate','image_status'=>'pending',
+    'created_at'=>now(),'updated_at'=>now(),
+]);
+$pngBytes=base64_decode($onePixel);
+$downloadHits=0;
+Http::fake(function($request) use ($pngBytes,&$downloadHits) {
+    if(str_contains($request->url(),'/api/image-tasks/generations'))
+        return Http::response(['id'=>$request['client_task_id'],'status'=>'queued'],200);
+    if(str_contains($request->url(),'/api/image-tasks?')){
+        parse_str((string)parse_url($request->url(),PHP_URL_QUERY),$params);
+        return Http::response(['items'=>[[
+            'id'=>$params['ids']??'','status'=>'success',
+            'results'=>[['url'=>'https://api.openai.com/files/ci-image.png']],
+            'actions'=>['resume_poll'=>false],
+        ]],'missing_ids'=>[]],200);
+    }
+    if($request->url()==='https://api.openai.com/files/ci-image.png'){
+        $downloadHits++;
+        return Http::response($pngBytes,200,['Content-Type'=>'image/png']);
+    }
+    return Http::response('unknown request',500);
+});
+$controller->generate($id,$urlScene,new ImageEngine());
+DB::table('assets')->where('id',$urlScene)->update(['image_poll_after'=>now()->subSecond()]);
+$urlResult=$controller->status($id,$urlScene)->getData(true);
+assertMedia($urlResult['status']==='ready'&&$downloadHits===1,'fetch provider URL to private image asset');
+Storage::disk('local')->delete(DB::table('assets')->where('id',$urlScene)->value('file_path'));
+
 // Hard security boundary: never fetch images from arbitrary remote hosts.
 $blockedUrl=false;
 try {(new \App\Services\ChatgptImageTasks())->image([
