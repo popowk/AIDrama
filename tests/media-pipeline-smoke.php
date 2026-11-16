@@ -205,11 +205,11 @@ Http::fake(function($request) use ($pngBytes,&$downloadHits) {
         parse_str((string)parse_url($request->url(),PHP_URL_QUERY),$params);
         return Http::response(['items'=>[[
             'id'=>$params['ids']??'','status'=>'success',
-            'results'=>[['url'=>'https://api.openai.com/files/ci-image.png']],
+            'results'=>[['url'=>'https://api.openai.com/images/2026/11/16/ci-image.png']],
             'actions'=>['resume_poll'=>false],
         ]],'missing_ids'=>[]],200);
     }
-    if($request->url()==='https://api.openai.com/files/ci-image.png'){
+    if($request->url()==='https://api.openai.com/images/2026/11/16/ci-image.png'){
         $downloadHits++;
         return Http::response($pngBytes,200,['Content-Type'=>'image/png']);
     }
@@ -220,7 +220,7 @@ DB::table('assets')->where('id',$urlScene)->update(['image_poll_after'=>now()->s
 $urlResult=$controller->status($id,$urlScene)->getData(true);
 if($urlResult['status']!=='ready'||$downloadHits!==1)
     fwrite(STDERR,'URL image result debugging: '.json_encode($urlResult,JSON_UNESCAPED_UNICODE).' downloads='.$downloadHits."\n");
-assertMedia($urlResult['status']==='ready'&&$downloadHits===1,'fetch provider URL to private image asset');
+assertMedia($urlResult['status']==='ready'&&$downloadHits===1,'fetch native /images/ provider URL to private image asset');
 Storage::disk('local')->delete(DB::table('assets')->where('id',$urlScene)->value('file_path'));
 
 // Hard security boundary: never fetch images from arbitrary remote hosts.
