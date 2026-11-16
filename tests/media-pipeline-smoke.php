@@ -84,6 +84,18 @@ $a=DB::table('assets')->where('id',$scene)->first();
 assertMedia($a->image_status==='ready'&&Storage::disk('local')->exists($a->file_path),'private generated image saved');
 $file=$controller->file($id,$scene);
 assertMedia($file->getStatusCode()===200,'authenticated private file response');
+$thumbResponse=$controller->thumbnail($id,$scene);
+assertMedia($thumbResponse->getStatusCode()===200,'private asset thumbnail is accessible');
+$thumbInfo=@getimagesize($thumbResponse->getFile()->getPathname());
+assertMedia(is_array($thumbInfo)&&$thumbInfo[0]<=320&&$thumbInfo[1]<=320,'thumbnail at most 320px');
+$downloadResponse=$controller->download($id,$scene);
+$disposition=(string)$downloadResponse->headers->get('content-disposition');
+assertMedia($downloadResponse->getStatusCode()===200 &&
+    str_contains($disposition,'attachment') &&
+    str_contains(strtolower($disposition),'filename*=utf-8'),
+    'download forces attachment with UTF-8 asset name');
+assertMedia($downloadResponse->getFile()->getPathname()===$file->getFile()->getPathname(),
+    'download transfers unmodified original image');
 
 config()->set('app.key','base64:'.base64_encode(str_repeat('x',32)));
 app()->forgetInstance('encrypter');
