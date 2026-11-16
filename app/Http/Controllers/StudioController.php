@@ -295,6 +295,23 @@ class StudioController
         PromptPresets::reset($kind);
         return back()->with('ok','已恢复「'.PromptPresets::LABELS[$kind].'」原始参考提示词');
     }
+    public function detectModels(Request $request,\App\Services\ModelDiscovery $discovery)
+    {
+        $v=$request->validate([
+            'kind'=>['required',Rule::in(['text','image'])],
+            'api_base'=>'required|url|starts_with:https://|max:250',
+            'api_key'=>'nullable|string|max:2000',
+        ]);
+        try{
+            return response()->json(
+                $discovery->discover($v['kind'],$v['api_base'],$v['api_key']??null)
+            );
+        }catch(\Throwable $e){
+            return response()->json(['error'=>$e instanceof RuntimeException
+                ?$e->getMessage():'模型列表检测出现服务器错误，请检查私有日志'],422);
+        }
+    }
+
     public function saveSettings(Request $request) {
         $v=$request->validate([
             'kind'=>['required',Rule::in(['text','image'])],
