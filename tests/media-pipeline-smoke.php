@@ -58,6 +58,7 @@ PromptPresets::reset('kling');
 assertMedia(PromptPresets::mode('kling')==='reference','reference reset');
 DB::table('settings')->where('key','like','prompt.kling.%')->delete();
 
+DB::table('settings')->updateOrInsert(['key'=>'ai.image.delivery'],['value'=>'openai_sync','updated_at'=>now()]);
 $controller=new AssetController();
 $blocked=$controller->generate($id,$brand,new class extends ImageEngine {
     public function generate(object $p,object $a):array {
@@ -91,6 +92,103 @@ DB::table('settings')->updateOrInsert(['key'=>'ai.text.model'],[
 DB::table('settings')->updateOrInsert(['key'=>'ai.text.api_base'],[
     'value'=>'https://api.openai.com/v1','updated_at'=>now(),
 ]);
+// chatgpt2api native 3.x: idempotent submission, remote status polling,
+// recoverable completion, and private image storage without synchronous waits.
+DB::table('settings')->updateOrInsert(['key'=>'ai.image.delivery'],[
+    'value'=>'chatgpt2api_tasks','updated_at'=>now(),
+]);
+DB::table('settings')->updateOrInsert(['key'=>'ai.image.api_base'],[
+    'value'=>'https://api.openai.com/v1','updated_at'=>now(),
+]);
+DB::table('settings')->updateOrInsert(['key'=>'ai.image.model'],[
+    'value'=>'gpt-image-2','updated_at'=>now(),
+]);
+DB::table('settings')->updateOrInsert(['key'=>'ai.image.api_key'],[
+    'value'=>Crypt::encryptString('ci-image-only-test-key'),'updated_at'=>now(),
+]);
+$asyncScene=DB::table('assets')->insertGetId([
+    'project_id'=>$id,'type'=>'scene','name'=>'普通园区','description'=>'广角园区',
+    'source_kind'=>'generate','image_status'=>'pending',
+    'created_at'=>now(),'updated_at'=>now(),
+]);
+$taskSubmits=0;
+$remoteStep=0;
+$onePixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/4p8AAAAASUVORK5CYII=';
+Http::fake(function($request) use (&$taskSubmits,&$remoteStep,$onePixel) {
+    $url=$request->url();
+    if(str_contains($url,'/api/image-tasks/generations')){
+        $taskSubmits++;
+        assertMedia(str_starts_with($request['client_task_id'],'aidrama-'),'stable client task ID');
+        return Http::response(['id'=>$request['client_task_id'],'status'=>'queued'],200);
+    }
+    if(str_contains($url,'/api/image-tasks?')){
+        parse_str((string)parse_url($url,PHP_URL_QUERY),$params);
+        $remoteStep++;
+        return Http::response(['items'=>[[
+            'id'=>$params['ids']??'','status'=>$remoteStep===1?'running':'success',
+            'results'=>$remoteStep===1?[]:[['b64_json'=>$onePixel]],
+            'actions'=>['resume_poll'=>false],
+        ]],'missing_ids'=>[]],200);
+    }
+    return Http::response(['detail'=>'unexpected request'],500);
+});
+$queued=$controller->generate($id,$asyncScene,new ImageEngine());
+assertMedia($queued->getStatusCode()===202,'async image task submitted quickly');
+$task=DB::table('assets')->where('id',$asyncScene)->first();
+assertMedia((bool)preg_match('/^aidrama-[a-f0-9]{32}$/D',(string)$task->image_task_id),'persistent remote task id');
+$again=$controller->generate($id,$asyncScene,new ImageEngine());
+assertMedia($again->getStatusCode()===202&&$taskSubmits===1,'repeat click cannot issue duplicate paid task');
+DB::table('assets')->where('id',$asyncScene)->update(['image_poll_after'=>now()->subSeconds(1)]);
+$progress=$controller->status($id,$asyncScene)->getData(true);
+assertMedia($progress['status']==='generating'&&$progress['stage']==='running','first async poll returns running status');
+DB::table('assets')->where('id',$asyncScene)->update(['image_poll_after'=>now()->subSeconds(1)]);
+$completed=$controller->status($id,$asyncScene)->getData(true);
+assertMedia($completed['status']==='ready','async image completes after polling');
+$final=DB::table('assets')->where('id',$asyncScene)->first();
+assertMedia(Storage::disk('local')->exists($final->file_path),'async image stored privately');
+assertMedia($taskSubmits===1,'polling did not resubmit image generation');
+Storage::disk('local')->delete($final->file_path);
+
+// Simulate an edge 524 after the task was accepted upstream. The response is
+// uncertain but the request must NOT issue a fresh paid job ID.
+$uncertain=DB::table('assets')->insertGetId([
+    'project_id'=>$id,'type'=>'scene','name'=>'红砖小院','description'=>'夕阳照耀',
+    'source_kind'=>'generate','image_status'=>'pending',
+    'created_at'=>now(),'updated_at'=>now(),
+]);
+$lostSubmits=0;
+Http::fake(function($request) use (&$lostSubmits,$onePixel) {
+    if(str_contains($request->url(),'/api/image-tasks/generations')){
+        $lostSubmits++;
+        return Http::response('Gateway timeout',524);
+    }
+    if(str_contains($request->url(),'/api/image-tasks?')){
+        parse_str((string)parse_url($request->url(),PHP_URL_QUERY),$params);
+        return Http::response(['items'=>[[
+            'id'=>$params['ids']??'','status'=>'success',
+            'results'=>[['b64_json'=>$onePixel]],
+            'actions'=>['resume_poll'=>false],
+        ]],'missing_ids'=>[]],200);
+    }
+    return Http::response('unexpected request',500);
+});
+$ambiguous=$controller->generate($id,$uncertain,new ImageEngine());
+assertMedia($ambiguous->getStatusCode()===202,'HTTP 524 is uncertain and recoverable, not final failure');
+$unknownTask=DB::table('assets')->where('id',$uncertain)->first();
+assertMedia($unknownTask->image_status==='generating'&&$unknownTask->image_task_id!==null,
+    '524 retains durable image task ID');
+DB::table('assets')->where('id',$uncertain)->update(['image_poll_after'=>now()->subSecond()]);
+$recovered=$controller->status($id,$uncertain)->getData(true);
+assertMedia($recovered['status']==='ready'&&$lostSubmits===1,'recover 524 via task lookup without duplicate paid submission');
+Storage::disk('local')->delete(DB::table('assets')->where('id',$uncertain)->value('file_path'));
+
+// Hard security boundary: never fetch images from arbitrary remote hosts.
+$blockedUrl=false;
+try {(new \App\Services\ChatgptImageTasks())->image([
+    'results'=>[['url'=>'https://127.0.0.1/files/evil.png']],
+]);}catch(\RuntimeException $e){$blockedUrl=true;}
+assertMedia($blockedUrl,'private / third-party URL rejected');
+
 $response=[
     'script_mode'=>'talking',
     'shots'=>[[
@@ -117,6 +215,6 @@ assertMedia($result['assets'][0]['source_kind']==='upload','override unsafe AI p
 
 Storage::disk('local')->delete($a->file_path);
 DB::table('projects')->where('id',$id)->delete();
-foreach(['ai.text.api_key','ai.text.api_base','ai.text.model'] as $key)
+foreach(['ai.text.api_key','ai.text.api_base','ai.text.model','ai.image.api_key','ai.image.api_base','ai.image.model','ai.image.delivery'] as $key)
     DB::table('settings')->where('key',$key)->delete();
-echo "Media pipeline templates, script recognition, product upload block, image storage and video prompt tests passed\n";
+echo "Media pipeline, idempotent async images, 524 recovery, private storage and storyboard tests passed\n";
