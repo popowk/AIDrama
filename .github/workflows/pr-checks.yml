@@ -1,0 +1,29 @@
+name: AIDrama pull request checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, curl, fileinfo, dom, pdo_sqlite, zip, gd
+          tools: composer:v2
+      - name: PHP and Blade syntax, migrations and regression tests
+        run: |
+          set -euo pipefail
+          find app bootstrap config routes database public deploy tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          composer install --no-dev --prefer-dist --no-interaction --no-progress
+          mkdir -p storage/app/private storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
+          touch database/database.sqlite
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php artisan migrate --force
+          php tests/storyboard-table-smoke.php
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/storyboard-async-smoke.php
+          php artisan view:cache
+          php artisan route:list --path=projects

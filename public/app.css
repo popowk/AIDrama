@@ -100,3 +100,17 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .model-show-all input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:#91a7ff}
 .model-discovery-state{min-height:1.4em}
 @media(max-width:540px){.model-discovery-controls .model-detected-list{flex-basis:100%}.model-discovery-controls{align-items:stretch}}
+
+/* Storyboard-first editor and per-shot script workspace */
+#script-editor,#script-segments,[id^="shot-"]{scroll-margin-top:95px}
+.storyboard-preview{max-width:100%;overflow:auto;margin:10px 0 14px}
+.storyboard-mini-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+.storyboard-mini-table th,.storyboard-mini-table td{border:1px solid var(--line);padding:8px 10px;text-align:left;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storyboard-mini-table th{background:var(--panel2)}
+.segment-workspace{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.segment-workspace h3{margin:0;font-size:17px}
+.segment-card{border:1px solid var(--line);border-radius:11px;background:#101827;padding:12px 14px}
+.segment-card summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.segment-card summary .small{flex:1;min-width:140px}
+.segment-card label{display:block;margin-top:14px}
+.segment-card textarea{line-height:1.65}

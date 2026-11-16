@@ -4,7 +4,7 @@
 <div class="headline"><div><a class="breadcrumb" href="{{ route('home') }}">← 返回项目</a><h1>{{ $project->name }}</h1><p class="muted">{{ $project->style }} · {{ \App\Services\FrameProfile::label($project->frame_ratio??'landscape') }} · 每镜最长 {{ $project->shot_limit }} 秒 · {{ ['draft'=>'待生成','generating'=>'生成中','ready'=>'已生成','error'=>'上次生成失败'][$project->status]??$project->status }}
 @if($project->detected_mode) · 已识别：{{ $project->detected_mode==='talking'?'纯口播':'文案＋口播' }}@endif</p></div><a class="button outline" href="{{ route('project.export',$project->id) }}">导出项目 JSON</a></div>
 <div class="project-grid">
-<section class="panel"><div class="section-heading"><h2>01 / 剧本和生成参数</h2></div>
+<section class="panel" id="script-editor"><div class="section-heading"><h2>01 / 剧本和生成参数</h2></div>
 <form method="post" action="{{ route('project.update',$project->id) }}" class="form-stack">@csrf
 <label>项目名称<input name="name" value="{{ $project->name }}" maxlength="191" required></label>
 <div class="inline-fields">
@@ -36,15 +36,46 @@
 @endforeach
 </div></details>
 <label>创作形式<select name="script_mode"><option value="auto" @selected($project->script_mode==='auto')>自动识别纯口播 / 文案＋口播</option><option value="talking" @selected($project->script_mode==='talking')>纯口播（角色面对镜头说话）</option><option value="mixed" @selected($project->script_mode==='mixed')>文案＋口播（画面展示、字幕与旁白）</option></select></label>
-<label>完整剧本<textarea name="script" rows="11" maxlength="100000" required>{{ $project->script }}</textarea></label>
+<label>原稿输入方式
+<select name="input_kind" id="project-input-kind">
+<option value="script" @selected(($project->input_kind??'script')==='script')>完整剧本</option>
+<option value="storyboard" @selected(($project->input_kind??'script')==='storyboard')>粘贴分镜表格 → AI 逐镜扩写剧本</option>
+</select></label>
+<div id="project-storyboard-pane" @if(($project->input_kind??'script')!=='storyboard') hidden @endif>
+<label>原始分镜表格<textarea name="storyboard_source" id="project-storyboard-source" rows="11" maxlength="100000" placeholder="从 Excel 直接粘贴；或粘贴 Markdown 表格，列名如：镜号 | 画面 | 台词 | 画面字幕">{{ $project->storyboard_source??'' }}</textarea></label>
+<p class="hint">支持 Excel/表格软件复制的制表符表格、Markdown 和 CSV；默认识别镜号、画面、台词、画面字幕、时长，单次最多 40 镜。保存后可逐镜扩写，原始表格不会被覆盖。</p>
+<div id="storyboard-preview" class="storyboard-preview" aria-live="polite"></div>
+</div>
+<div id="project-script-pane" @if(($project->input_kind??'script')==='storyboard' && trim((string)$project->script)==='') hidden @endif>
+<label><span id="project-script-label">{{ ($project->input_kind??'script')==='storyboard'?'扩写后的完整剧本（可编辑）':'完整剧本' }}</span>
+<textarea name="script" id="project-script-source" rows="11" maxlength="100000" @required(($project->input_kind??'script')!=='storyboard')>{{ $project->script }}</textarea></label>
+</div>
 <div class="button-row"><button class="button outline" type="submit">保存剧本</button></div></form>
+<form method="post" action="{{ route('project.expand',$project->id) }}" id="project-expand-form" @if(($project->input_kind??'script')!=='storyboard') hidden @endif>@csrf
+<button class="button primary wide" type="submit" id="expand-storyboard-btn" @disabled($project->status==='generating'||empty($project->storyboard_source))>✦ AI 按分镜逐段生成剧本</button>
+<p class="hint" id="expand-help">先保存粘贴的分镜表格，再点击这里。逐镜扩写不会删除已有分镜或资产。</p>
+@if($project->storyboard_dirty??false)<p class="hint">原始表格已更改，旧剧本和素材已保留。请重新扩写，之后才能用新内容生成分镜。</p>@endif
+</form>
 <form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
-<button class="button primary wide" type="submit" @disabled($project->status==='generating')>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
+<button class="button primary wide" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
 <div id="generation-state" class="task-state" data-status="{{ $project->status }}">
   @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
   @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
   @else<p class="hint">生成任务会保存在数据库。API 最长等待约 145 秒，遇到限流或暂时故障会自动重试一次。</p>@endif
 </div>
+@if(count($scriptSegments))
+<div id="script-segments" class="segment-workspace">
+<div class="section-heading space"><h3>逐镜扩写的剧本 · {{ count($scriptSegments) }} 段</h3><span class="muted">可逐段修改并合并回完整剧本</span></div>
+<form method="post" action="{{ route('project.segments.save',$project->id) }}" class="form-stack">@csrf
+@foreach($scriptSegments as $index=>$segment)
+<details class="segment-card" @if($index===0) open @endif>
+<summary><strong>{{ str_pad($segment['sequence']??($index+1),2,'0',STR_PAD_LEFT) }} · {{ $segment['title']??'镜头' }}</strong><span class="muted small">{{ mb_strimwidth((string)($segment['visual']??''),0,65,'…') }}</span></summary>
+<label>本镜的完整剧本<textarea rows="7" name="parts[{{ $index }}]" maxlength="20000" required>{{ $segment['script']??'' }}</textarea></label>
+</details>
+@endforeach
+<div class="button-row"><button class="button outline" type="submit" @disabled($project->status==='generating')>保存全部分段剧本并同步完整剧本</button></div>
+</form></div>
+@endif
 </section>
 <section class="panel"><div class="section-heading"><h2>02 / 统计概览</h2></div>
 <div class="stats"><div><strong>{{ $shots->count() }}</strong><small>镜头数</small></div><div><strong>{{ $total }}s</strong><small>预计总时长</small></div><div><strong>{{ $assets->count() }}</strong><small>资产数</small></div></div>
@@ -129,7 +160,7 @@
 <section class="panel shots-panel"><div class="section-heading"><h2>04 / 分镜表</h2><span class="muted">按时间顺序 · 支持逐镜修改和导出提示词</span></div>
 @if($shots->count())
 @foreach($shots as $shot)
-<article class="shot-card"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
+<article class="shot-card" id="shot-{{ $shot->id }}"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
@@ -141,7 +172,7 @@
 <textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly placeholder="点击「生成适配提示词」查看结果..."></textarea>
 </article>
 @endforeach
-@else<div class="empty">当前没有分镜。在上方保存剧本、配置 API 后，点击「AI 生成分镜与资产清单」。</div>@endif
+@else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
 <script>
 const projectStyleSelector=document.getElementById('project-style-selector');
@@ -157,6 +188,60 @@ if(projectStyleSelector){
   projectStyleSelector.addEventListener('change',syncStyle);
   syncStyle();
 }
+const inputKind=document.getElementById('project-input-kind');
+const storyboardSource=document.getElementById('project-storyboard-source');
+const scriptSource=document.getElementById('project-script-source');
+const savedStoryboard=@json((string)($project->storyboard_source??''));
+function showSourceMode(){
+ if(!inputKind)return;
+ const storyboard=inputKind.value==='storyboard';
+ document.getElementById('project-storyboard-pane').hidden=!storyboard;
+ document.getElementById('project-expand-form').hidden=!storyboard;
+ document.getElementById('project-script-pane').hidden=storyboard&&!scriptSource.value.trim();
+ scriptSource.required=!storyboard;
+ storyboardSource.required=storyboard;
+ document.getElementById('project-script-label').textContent=storyboard?'扩写后的完整剧本（可编辑）':'完整剧本';
+ syncExpandButton();
+}
+function syncExpandButton(){
+ const button=document.getElementById('expand-storyboard-btn');
+ const help=document.getElementById('expand-help');
+ if(!button||!storyboardSource)return;
+ const changed=storyboardSource.value!==savedStoryboard;
+ button.disabled=@json($project->status==='generating')||!storyboardSource.value.trim()||changed;
+ help.textContent=changed?'表格内容已修改，请先点击“保存剧本”保存原始分镜，再执行逐镜扩写。':'逐镜扩写不会删除当前已有的分镜或资产。';
+}
+function showStoryboardPreview(){
+ const preview=document.getElementById('storyboard-preview');
+ if(!preview||!storyboardSource)return;
+ const src=storyboardSource.value.trim();preview.replaceChildren();
+ if(!src)return;
+ const lines=src.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
+ const separator=lines[0]?.includes('\t')?'\t':(lines[0]?.includes('|')?'|':',');
+ const rows=lines.map(v=>{
+   const clean=separator==='|'?v.replace(/^\s*\||\|\s*$/g,''):v;
+   return clean.split(separator).map(c=>c.trim());
+ }).filter(c=>c.some(v=>v)&&!c.every(v=>/^:?-{3,}:?$/.test(v)));
+ const label=document.createElement('p');label.className='hint';
+ label.textContent='表格预览 · '+Math.max(0,rows.length-1)+' 行内容（以下仅显示前 5 行，保存时会由服务端完整校验）';
+ preview.appendChild(label);
+ const table=document.createElement('table');table.className='storyboard-mini-table';
+ rows.slice(0,6).forEach((cells,i)=>{
+   const tr=document.createElement('tr');
+   cells.slice(0,6).forEach(v=>{
+     const cell=document.createElement(i===0?'th':'td');
+     cell.textContent=v;tr.appendChild(cell);
+   });table.appendChild(tr);
+ });
+ preview.appendChild(table);
+}
+inputKind?.addEventListener('change',showSourceMode);
+storyboardSource?.addEventListener('input',()=>{syncExpandButton();showStoryboardPreview();});
+showSourceMode();showStoryboardPreview();
+if(['#script-editor','#script-segments'].includes(window.location.hash)){
+ const anchor=window.location.hash;
+ window.addEventListener('load',()=>document.querySelector(anchor)?.scrollIntoView({block:'start'}),{once:true});
+}
 const generationUrl=@json(route('generation.status',$project->id));
 const runUrl=@json(route('generation.run',$project->id));
 const initialGeneration=@json($project->status);
@@ -164,13 +249,14 @@ let runningRequest=false,taskReloaded=false;
 const generationBox=document.getElementById('generation-state');
 function renderGeneration(info){
  if(!generationBox)return;
- if(info.status==='queued') generationBox.innerHTML='<strong>排队等待执行</strong><p class="muted">任务已持久保存，马上请求文本模型。</p>';
- else if(info.status==='running') generationBox.innerHTML='<strong>文本模型处理中…</strong><p class="muted">已发送请求，请查看模型返回情况。接口较慢时允许多等一段时间；当前尝试次数：'+Number(info.attempts||1)+'。</p>';
+ const scriptTask=info.kind==='expand';
+ if(info.status==='queued') generationBox.innerHTML='<strong>排队等待执行</strong><p class="muted">'+(scriptTask?'等待逐镜剧本扩写':'等待生成分镜和资产')+'。</p>';
+ else if(info.status==='running') generationBox.innerHTML='<strong>'+(scriptTask?'正在逐镜扩写剧本…':'文本模型处理中…')+'</strong><p class="muted">已发送请求；当前尝试次数：'+Number(info.attempts||1)+'。</p>';
  else if(info.status==='failed') {
    const strong=document.createElement('strong');strong.textContent='生成失败，可重试';
    const p=document.createElement('p');p.className='muted';p.textContent=info.error||'请求失败，请检查模型连接。';
    generationBox.replaceChildren(strong,p);
- } else if(info.status==='done') generationBox.innerHTML='<strong>✓ 分镜已生成</strong><p class="muted">正在刷新最新结果…</p>';
+ } else if(info.status==='done') generationBox.innerHTML='<strong>✓ '+(scriptTask?'剧本扩写完成':'分镜已生成')+'</strong><p class="muted">正在刷新最新结果…</p>';
 }
 function runGeneration(){
  if(runningRequest)return;
@@ -194,7 +280,7 @@ async function refreshGeneration(){
      // An explicit fragment and fresh navigation override Safari/Chrome's
      // previous scroll restoration to a large image in the asset list.
      const target=@json(route('project.show',$project->id));
-     window.location.replace(target+'?result='+Date.now()+'#generation-state');
+     window.location.replace(target+'?result='+Date.now()+(data.kind==='expand'?'#script-segments':'#generation-state'));
    }
  }catch(e){}
 }
