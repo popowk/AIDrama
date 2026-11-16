@@ -54,9 +54,10 @@
 <form method="post" action="{{ route('project.expand',$project->id) }}" id="project-expand-form" @if(($project->input_kind??'script')!=='storyboard') hidden @endif>@csrf
 <button class="button primary wide" type="submit" id="expand-storyboard-btn" @disabled($project->status==='generating'||empty($project->storyboard_source))>✦ AI 按分镜逐段生成剧本</button>
 <p class="hint" id="expand-help">先保存粘贴的分镜表格，再点击这里。逐镜扩写不会删除已有分镜或资产。</p>
+@if($project->storyboard_dirty??false)<p class="hint">原始表格已更改，旧剧本和素材已保留。请重新扩写，之后才能用新内容生成分镜。</p>@endif
 </form>
 <form method="post" action="{{ route('project.generate',$project->id) }}" onsubmit="return confirm('生成成功后将替换当前分镜和资产，原有数据在模型返回前会保留，确定提交吗？')">@csrf
-<button class="button primary wide" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)==='')>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
+<button class="button primary wide" type="submit" @disabled($project->status==='generating'||trim((string)$project->script)===''||(($project->input_kind??'script')==='storyboard'&&($project->storyboard_dirty??false)))>✦ {{ $shots->count()?'重新生成分镜与资产':'AI 生成分镜与资产清单' }}</button></form>
 <div id="generation-state" class="task-state" data-status="{{ $project->status }}">
   @if($project->status==='generating')<strong>正在等待文本模型返回</strong><p class="muted">任务已保存。页面会自动显示进度，处理可能需要数分钟；无需重复提交。</p>
   @elseif($project->status==='error')<strong>上次生成没有完成</strong><p class="muted">原有分镜不会因请求失败而被清空，检查模型后可以重新生成。</p>
