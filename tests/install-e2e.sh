@@ -101,7 +101,9 @@ grep -q '检测可用模型' "$RUNNER_TEMP/models.html"
 grep -q 'model-detected-list' "$RUNNER_TEMP/models.html"
 DETECT_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
   'http://127.0.0.1:18868/settings/models/detect')"
-test "$DETECT_ANON_CODE" = "302"
+# CSRF middleware may reject a completely unauthenticated POST with 419
+# before the administrator session gate returns 302.
+test "$DETECT_ANON_CODE" = "419" || test "$DETECT_ANON_CODE" = "302"
 DETECT_INVALID_CODE="$(curl -sS -b "$COOKIE" -H "X-CSRF-TOKEN: $(sed -n 's/.*name="csrf-token" content="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/models.html" | head -1)" \
   -H 'Accept: application/json' -H 'Content-Type: application/json' -X POST \
   --data '{"kind":"text","api_base":"http://127.0.0.1/v1","api_key":"fake"}' \
