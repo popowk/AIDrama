@@ -17,7 +17,9 @@ class StudioController
 {
     public function index() {
         $projects=DB::table('projects')->orderByDesc('updated_at')->paginate(20);
-        return view('dashboard',compact('projects'));
+        $stylePresets=CreativeLibrary::styles();
+        $creativeSkills=CreativeLibrary::skills();
+        return view('dashboard',compact('projects','stylePresets','creativeSkills'));
     }
     public function create(Request $request) {
         $v=$request->validate([
