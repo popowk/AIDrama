@@ -9,6 +9,16 @@
 <label>项目名称<input name="name" value="{{ $project->name }}" maxlength="191" required></label>
 <div class="inline-fields">
 <label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label>
+<label>视频创作模式
+<select name="video_mode" id="project-video-mode">
+<option value="short" @selected(($project->video_mode??'short')==='short')>短视频（默认 · 紧凑节奏 / 智能合镜）</option>
+<option value="story" @selected(($project->video_mode??'short')==='story')>正常故事片（保留原有叙事节奏）</option>
+</select></label>
+<label>背景音乐
+<select name="allow_background_music">
+<option value="0" @selected(!($project->allow_background_music??false))>不生成背景音乐（默认）</option>
+<option value="1" @selected((bool)($project->allow_background_music??false))>允许背景音乐</option>
+</select></label>
 </div>
 <label id="project-custom-style" @if(($project->style_preset??'custom')!=='custom') hidden @endif>
 自定义画风名称<input name="style" value="{{ $project->style }}" maxlength="191"
@@ -35,7 +45,8 @@
 </label>
 @endforeach
 </div></details>
-<label>创作形式<select name="script_mode"><option value="auto" @selected($project->script_mode==='auto')>自动识别纯口播 / 文案＋口播</option><option value="talking" @selected($project->script_mode==='talking')>纯口播（角色面对镜头说话）</option><option value="mixed" @selected($project->script_mode==='mixed')>文案＋口播（画面展示、字幕与旁白）</option></select></label>
+<p class="hint">短视频会尽量把同场景的表情、动作与口播安排在同镜头中，并在总时长允许时合并分镜；不自动生成字幕。台词允许多个角色轮流说话。</p>
+<label>创作形式<select name="script_mode"><option value="auto" @selected($project->script_mode==='auto')>自动识别纯口播 / 文案＋口播</option><option value="talking" @selected($project->script_mode==='talking')>纯口播（角色面对镜头说话）</option><option value="mixed" @selected($project->script_mode==='mixed')>文案＋口播（画面展示与旁白）</option></select></label>
 <label>原稿输入方式
 <select name="input_kind" id="project-input-kind">
 <option value="script" @selected(($project->input_kind??'script')==='script')>完整剧本</option>
@@ -115,8 +126,6 @@
   <div class="asset-fold-body" @if($a->is_archived) hidden @endif>
     <div class="asset asset-media" id="asset-{{ $a->id }}" data-pending="{{ $a->image_status==='generating'?'1':'0' }}">
 <div class="asset-info">
-<span class="asset-type">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$a->type]??$a->type }}</span>
-<strong>{{ $a->name }}</strong>
 <span class="chip">{{ $a->source_kind==='upload'?'必须使用上传素材':'允许 AI 生成' }}</span>
 <p>{{ $a->description }}</p>
 @if($a->voice_description)<p class="muted small">声音设定：{{ $a->voice_description }}</p>@endif
@@ -199,8 +208,11 @@
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
-<div class="inline-fields"><label>开口之前的动作<textarea rows="2" name="action_before">{{ $shot->action_before }}</textarea></label><label>口播/台词<textarea rows="2" name="dialogue">{{ $shot->dialogue }}</textarea></label></div>
-<div class="inline-fields"><label>画面文字/字幕<textarea rows="2" name="on_screen_text" placeholder="画面叠加显示的文案">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
+<div class="inline-fields"><label>开口之前必须完成的动作<textarea rows="2" name="action_before" placeholder="可边说边做的动作请写在画面与动作里">{{ $shot->action_before }}</textarea></label>
+<label>口播/台词（同一框可多人轮流说）
+<textarea rows="4" name="dialogue" placeholder="悟空：二师兄，看俺这个！&#10;八戒：这东西可真省心。">{{ $shot->dialogue }}</textarea>
+<small class="muted">多人对白请每行写“人物名：台词”，保留先后顺序；同一镜头可边动作边对话。</small></label></div>
+<div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
@@ -225,6 +237,11 @@ if(projectStyleSelector){
   projectStyleSelector.addEventListener('change',syncStyle);
   syncStyle();
 }
+const projectVideoMode=document.getElementById('project-video-mode');
+projectVideoMode?.addEventListener('change',()=>{
+  const story=projectVideoMode.value==='story';
+  document.querySelectorAll('.legacy-screen-copy').forEach(label=>label.hidden=!story);
+});
 const inputKind=document.getElementById('project-input-kind');
 const storyboardSource=document.getElementById('project-storyboard-source');
 const scriptSource=document.getElementById('project-script-source');
@@ -520,7 +537,7 @@ async function toggleAssetFold(form){
     if(foldLabel)foldLabel.textContent=archived?'已折叠 · 不参与生图':'';
     form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
     button.textContent=archived?'恢复资产':'移除 · 折叠';
-    if(note)note.textContent=archived?'已折叠，随时可以恢复。':'已恢复，继续编辑或生成图片。';
+    if(note)note.textContent='';
     syncAssetTotals();
   }catch(error){
     if(note){note.textContent='操作失败：'+(error.message||String(error));note.classList.add('is-error');}
@@ -779,12 +796,19 @@ if(imageAssetCards.length){
 async function loadPrompt(shot,project){
  const type=document.getElementById('type-'+shot).value;
  const area=document.getElementById('prompt-'+shot);
- area.value='生成中...';
+ area.value='文本大模型正在生成适配提示词…';
  try {
-  const res=await fetch('/projects/'+project+'/shots/'+shot+'/prompt?target='+encodeURIComponent(type),{credentials:'same-origin'});
-  if(!res.ok)throw new Error('HTTP '+res.status);
-  const data=await res.json();area.value=data.prompt||'';
- } catch(e){area.value='获取提示词失败：'+e.message}
+  const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
+  if(!csrf)throw new Error('登录已失效，请刷新页面');
+  const res=await fetch('/projects/'+project+'/shots/'+shot+'/prompt',{
+    method:'POST',credentials:'same-origin',
+    headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json','Accept':'application/json'},
+    body:JSON.stringify({target:type})
+  });
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.message||'HTTP '+res.status);
+  area.value=data.prompt||'';
+ } catch(e){area.value='视频提示词生成失败：'+e.message}
 }
 async function copyPrompt(shot){
  const text=document.getElementById('prompt-'+shot).value;
