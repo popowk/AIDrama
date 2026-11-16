@@ -7,14 +7,19 @@
 <section class="panel"><div class="section-heading"><h2>01 / 剧本和生成参数</h2></div>
 <form method="post" action="{{ route('project.update',$project->id) }}" class="form-stack">@csrf
 <label>项目名称<input name="name" value="{{ $project->name }}" maxlength="191" required></label>
-<div class="inline-fields"><label>画风<input name="style" value="{{ $project->style }}" maxlength="191" required></label>
-<label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label></div>
+<div class="inline-fields">
+<label>镜头时长上限<select name="shot_limit"><option value="15" @selected($project->shot_limit==15)>15 秒</option><option value="30" @selected($project->shot_limit==30)>30 秒</option></select></label>
+</div>
+<label id="project-custom-style" @if(($project->style_preset??'custom')!=='custom') hidden @endif>
+自定义画风名称<input name="style" value="{{ $project->style }}" maxlength="191"
+  placeholder="例如：原创武侠3D动画" @disabled(($project->style_preset??'custom')!=='custom') @required(($project->style_preset??'custom')==='custom')>
+</label>
 <div class="inline-fields">
 <label>项目画面比例<select name="frame_ratio">
 <option value="landscape" @selected(($project->frame_ratio??'landscape')==='landscape')>横屏 16:9</option>
 <option value="portrait" @selected(($project->frame_ratio??'landscape')==='portrait')>竖屏 9:16</option>
 </select><small class="muted">生图与后续视频提示词默认遵守；已生成的原图不裁切</small></label>
-<label>参考风格库<select name="style_preset">
+<label>参考风格库<select name="style_preset" id="project-style-selector">
 @foreach($stylePresets as $key=>$preset)
 <option value="{{ $key }}" @selected(($project->style_preset??'custom')===$key)>{{ $preset['label'] }}</option>
 @endforeach
@@ -139,6 +144,19 @@
 @else<div class="empty">当前没有分镜。在上方保存剧本、配置 API 后，点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
 <script>
+const projectStyleSelector=document.getElementById('project-style-selector');
+if(projectStyleSelector){
+  const customLabel=document.getElementById('project-custom-style');
+  const customField=customLabel?.querySelector('input[name="style"]');
+  const syncStyle=()=>{
+    const custom=projectStyleSelector.value==='custom';
+    customLabel.hidden=!custom;
+    customField.disabled=!custom;
+    customField.required=custom;
+  };
+  projectStyleSelector.addEventListener('change',syncStyle);
+  syncStyle();
+}
 const generationUrl=@json(route('generation.status',$project->id));
 const runUrl=@json(route('generation.run',$project->id));
 const initialGeneration=@json($project->status);
@@ -171,7 +189,13 @@ async function refreshGeneration(){
      const submit=document.querySelector('form[action="{{ route('project.generate',$project->id) }}"] button[type=submit]');
      if(submit){submit.disabled=false;submit.textContent='重新尝试生成';}
    }
-   if(data.status==='done'&&!taskReloaded){taskReloaded=true;window.location.reload();}
+   if(data.status==='done'&&!taskReloaded){
+     taskReloaded=true;
+     // An explicit fragment and fresh navigation override Safari/Chrome's
+     // previous scroll restoration to a large image in the asset list.
+     const target=@json(route('project.show',$project->id));
+     window.location.replace(target+'?result='+Date.now()+'#generation-state');
+   }
  }catch(e){}
 }
 if(initialGeneration==='generating'){
