@@ -115,6 +115,7 @@ $asyncScene=DB::table('assets')->insertGetId([
     'source_kind'=>'generate','image_status'=>'pending',
     'created_at'=>now(),'updated_at'=>now(),
 ]);
+Http::swap(new \Illuminate\Http\Client\Factory());
 $taskSubmits=0;
 $remoteStep=0;
 $onePixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/4p8AAAAASUVORK5CYII=';
@@ -160,6 +161,7 @@ $uncertain=DB::table('assets')->insertGetId([
     'source_kind'=>'generate','image_status'=>'pending',
     'created_at'=>now(),'updated_at'=>now(),
 ]);
+Http::swap(new \Illuminate\Http\Client\Factory());
 $lostSubmits=0;
 Http::fake(function($request) use (&$lostSubmits,$onePixel) {
     if(str_contains($request->url(),'/api/image-tasks/generations')){
@@ -194,6 +196,7 @@ $urlScene=DB::table('assets')->insertGetId([
     'created_at'=>now(),'updated_at'=>now(),
 ]);
 $pngBytes=base64_decode($onePixel);
+Http::swap(new \Illuminate\Http\Client\Factory());
 $downloadHits=0;
 Http::fake(function($request) use ($pngBytes,&$downloadHits) {
     if(str_contains($request->url(),'/api/image-tasks/generations'))
