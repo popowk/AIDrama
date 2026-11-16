@@ -24,6 +24,8 @@ jobs:
           touch database/database.sqlite
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php artisan migrate --force
           php tests/storyboard-table-smoke.php
+          node tests/storyboard-state.test.cjs
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/prompt-optional-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/storyboard-async-smoke.php
           php artisan view:cache
           php artisan route:list --path=projects
