@@ -468,7 +468,7 @@ class StudioController
             'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
             'dialogue'=>'nullable|string|max:20000','action_before'=>'nullable|string|max:5000',
             'on_screen_text'=>'nullable|string|max:5000',
-            'delivery'=>['sometimes',Rule::in(['on_camera','voiceover','none'])],
+            'delivery'=>['sometimes',Rule::in(['on_camera','conversation','voiceover','none'])],
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
@@ -493,7 +493,7 @@ class StudioController
                 'visual'=>'required|string|max:20000',
                 'action_before'=>'nullable|string|max:5000',
                 'dialogue'=>'nullable|string|max:20000',
-                'delivery'=>['required',Rule::in(['on_camera','voiceover','none'])],
+                'delivery'=>['required',Rule::in(['on_camera','conversation','voiceover','none'])],
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
             ]);
             $item=clone $item;
