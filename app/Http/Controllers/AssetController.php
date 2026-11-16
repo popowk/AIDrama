@@ -261,7 +261,12 @@ class AssetController
                     'image_error'=>null,'updated_at'=>now(),
                 ]);
             if(!$updated){Storage::disk('local')->delete($path);return response()->json(['status'=>'cancelled'],409);}
-            return response()->json(['status'=>'ready','image_url'=>route('asset.file',[$id,$asset])]);
+            return response()->json([
+                'status'=>'ready',
+                'image_url'=>route('asset.file',[$id,$asset]),
+                'thumbnail_url'=>route('asset.thumbnail',[$id,$asset]),
+                'download_url'=>route('asset.download',[$id,$asset]),
+            ]);
         }catch(\Throwable $e){
             $message=$this->imageError($id,$asset,$e);
             DB::table('assets')->where('id',$asset)->where('project_id',$id)
