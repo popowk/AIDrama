@@ -27,6 +27,7 @@ jobs:
           php tests/project-generation-layout-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/asset-controls-smoke.php
           node tests/inline-project-ui.test.cjs
+          node tests/asset-preview-layout.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-saves-smoke.php
           node tests/inline-settings-ui.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-settings-smoke.php
