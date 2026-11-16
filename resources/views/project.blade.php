@@ -58,14 +58,15 @@
 @if($a->file_path)
 <button type="button" class="asset-preview-trigger"
     data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}"
-    data-preview-name="{{ $a->name }}" data-preview-ext="{{ strtolower(pathinfo($a->file_path,PATHINFO_EXTENSION)) }}"
+    data-preview-name="{{ $a->name }}"
+    data-download-url="{{ route('asset.download',[$project->id,$a->id]) }}"
     onclick="openAssetPreview(this)"
     aria-label="预览{{ $a->name }}参考图">
     <img src="{{ route('asset.thumbnail',[$project->id,$a->id]) }}" alt="{{ $a->name }}缩略图" loading="lazy" decoding="async" width="176" height="132"
          style="display:block;width:100%;max-width:176px;height:132px;max-height:132px;object-fit:contain;">
     <span class="asset-preview-label">点击放大预览</span>
 </button>
-<a class="asset-original-link" href="{{ route('asset.file',[$project->id,$a->id]) }}" download="{{ $a->name }}.{{ strtolower(pathinfo($a->file_path,PATHINFO_EXTENSION)) }}">下载原图</a>
+<a class="button outline asset-download-button" href="{{ route('asset.download',[$project->id,$a->id]) }}">↓ 下载原图</a>
 @else
 <div class="asset-placeholder">{{ $a->source_kind==='upload'?'等待客户上传':'等待生成图片' }}</div>
 @endif
@@ -84,7 +85,7 @@
     </div>
     <div class="asset-lightbox-actions">
         <span class="muted small">点击遮罩或按 Esc 关闭 · 原图保留完整质量</span>
-        <a id="asset-lightbox-download" class="button outline" href="#" download>下载原图</a>
+        <a id="asset-lightbox-download" class="button outline" href="#">↓ 下载原图（资产名称）</a>
     </div>
 </dialog>
 <section class="panel shots-panel"><div class="section-heading"><h2>04 / 分镜表</h2><span class="muted">按时间顺序 · 支持逐镜修改和导出提示词</span></div>
@@ -156,8 +157,7 @@ function openAssetPreview(button){
   title.textContent=name+' · 原图预览';
   image.alt=name+'参考图';
   image.src=url;
-  download.href=url;
-  download.setAttribute('download',name.replace(/[\\/<>:"|?*\\x00-\\x1f]/g,'_')+'.'+(button.dataset.previewExt||'png'));
+  download.href=button.dataset.downloadUrl||url;
   if(typeof dialog.showModal==='function')dialog.showModal();
   else window.open(url,'_blank','noopener');
 }
