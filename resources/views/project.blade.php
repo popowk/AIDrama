@@ -176,7 +176,8 @@
 @endforeach
 @else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
-<script src="{{ asset('storyboard-state.js') }}?v={{ rawurlencode(trim((string) @file_get_contents(base_path('VERSION')))) }}"></script>
+{{-- This helper is served inline: the updater syncs CSS but not new public JS files. --}}
+<script>{!! file_get_contents(public_path('storyboard-state.js')) !!}</script>
 <script>
 const projectStyleSelector=document.getElementById('project-style-selector');
 if(projectStyleSelector){
