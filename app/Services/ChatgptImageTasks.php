@@ -143,13 +143,16 @@ class ChatgptImageTasks
             $config=$this->config();
             $host=is_array($parts)?strtolower((string)($parts['host']??'')):'';
             $path=is_array($parts)?(string)($parts['path']??''):'';
-            if(!$parts||($parts['scheme']??'')!=='https'||$host!==$config['host']||
+            if(!$parts||($parts['scheme']??'')!=='https'||!$host||
                 isset($parts['user'])||isset($parts['pass'])||
                 (isset($parts['port'])&&(int)$parts['port']!==443)||
-                isset($parts['fragment'])||
-                !preg_match('~^/(?:images|files)/[a-zA-Z0-9_./-]+$~D',$path)||
+                isset($parts['fragment']))
+                throw new RuntimeException('chatgpt2api 返回的图片 URL 格式不安全，拒绝下载');
+            if($host!==$config['host'])
+                throw new RuntimeException('图片已生成，但返回的图片域名与配置的 API 域名不一致；请检查 chatgpt2api 的 image_storage.public_base_url');
+            if(!preg_match('~^/(?:images|files)/[a-zA-Z0-9_./-]+$~D',$path)||
                 str_contains($path,'..'))
-                throw new RuntimeException('图片结果 URL 不在可信 API 同域名的 /images/ 或 /files/ 目录内，请检查 chatgpt2api 图片存储 public_base_url 设置');
+                throw new RuntimeException('图片已生成，但返回的下载路径不在 /images/ 或 /files/ 下；请检查 chatgpt2api 的图片存储设置');
             $this->checkPublicDns($host);
             // The files endpoint serves public random file paths. Do not send
             // bearer tokens to file URLs, even on the same API host.
