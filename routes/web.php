@@ -49,6 +49,8 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::get('/updates/status',[UpdateController::class,'status'])->name('updates.status');
     Route::post('/updates/apply',[UpdateController::class,'apply'])->middleware('throttle:3,1')->name('updates.apply');
     Route::get('/settings',[StudioController::class,'settings'])->name('settings');
+    Route::post('/settings/models/detect',[StudioController::class,'detectModels'])
+        ->middleware('throttle:12,1')->name('settings.models.detect');
     Route::post('/settings',[StudioController::class,'saveSettings'])->name('settings.save');
     Route::post('/settings/prompts',[StudioController::class,'savePromptSettings'])->name('settings.prompts.save');
     Route::post('/settings/prompts/{kind}/reset',[StudioController::class,'resetPromptSettings'])
