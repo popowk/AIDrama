@@ -97,6 +97,17 @@ grep -q 'AIDrama' "$RUNNER_TEMP/login-with-cached-config.html"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/settings > "$RUNNER_TEMP/models.html"
 grep -q '文本模型' "$RUNNER_TEMP/models.html"
 grep -q '图片模型' "$RUNNER_TEMP/models.html"
+grep -q '检测可用模型' "$RUNNER_TEMP/models.html"
+grep -q 'model-detected-list' "$RUNNER_TEMP/models.html"
+DETECT_ANON_CODE="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+  'http://127.0.0.1:18868/settings/models/detect')"
+test "$DETECT_ANON_CODE" = "302"
+DETECT_INVALID_CODE="$(curl -sS -b "$COOKIE" -H "X-CSRF-TOKEN: $(sed -n 's/.*name="csrf-token" content="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/models.html" | head -1)" \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' -X POST \
+  --data '{"kind":"text","api_base":"http://127.0.0.1/v1","api_key":"fake"}' \
+  -o "$RUNNER_TEMP/detect-invalid.json" -w '%{http_code}' \
+  'http://127.0.0.1:18868/settings/models/detect')"
+test "$DETECT_INVALID_CODE" = "422"
 curl -fsS -b "$COOKIE" http://127.0.0.1:18868/updates > "$RUNNER_TEMP/updates.html"
 grep -q '检查更新' "$RUNNER_TEMP/updates.html"
 grep -q '一键更新' "$RUNNER_TEMP/updates.html"
@@ -118,7 +129,7 @@ curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/project-create.headers" \
   --data-urlencode "_token=$PROJECT_CSRF" \
   --data-urlencode 'name=AI 口播创作测试' \
   --data-urlencode 'script=主持人站在摄像头前介绍产品。' \
-  --data-urlencode 'style=3D国风动画' \
+  --data-urlencode 'style=这段旧风格输入必须忽略' \
   --data-urlencode 'shot_limit=15' \
   --data-urlencode 'script_mode=mixed' \
   --data-urlencode 'frame_ratio=portrait' \
@@ -135,10 +146,23 @@ grep -q '资产清单' "$RUNNER_TEMP/project-details.html"
 grep -q '项目画面比例' "$RUNNER_TEMP/project-details.html"
 grep -q '风格库' "$RUNNER_TEMP/project-details.html"
 grep -q '技能库' "$RUNNER_TEMP/project-details.html"
-php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("SELECT frame_ratio,style_preset,creative_skills FROM projects WHERE id=?");$s->execute([(int)$argv[1]]);$r=$s->fetch(PDO::FETCH_ASSOC);if(!$r||$r["frame_ratio"]!=="portrait"||$r["style_preset"]!=="guofeng_3d"||!in_array("continuity",json_decode($r["creative_skills"],true)??[],true))exit(1);' "${PROJECT_URL##*/}"
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("SELECT frame_ratio,style_preset,creative_skills,style FROM projects WHERE id=?");$s->execute([(int)$argv[1]]);$r=$s->fetch(PDO::FETCH_ASSOC);if(!$r||$r["frame_ratio"]!=="portrait"||$r["style_preset"]!=="guofeng_3d"||$r["style"]!=="3D 国风动画"||!in_array("continuity",json_decode($r["creative_skills"],true)??[],true))exit(1);' "${PROJECT_URL##*/}"
 echo "Project portrait ratio, selectable style preset and creative skill selections persisted"
 # Verify private client-product image upload, session gate, and preview.
 PROJECT_ID="${PROJECT_URL##*/}"
+# The storyboard POST must always navigate back to its own progress area,
+# not restore the prior scroll position of the (formerly huge) image list.
+curl -sS -b "$COOKIE" -c "$COOKIE" -D "$RUNNER_TEMP/storyboard-submit.headers" \
+  -H "X-CSRF-TOKEN: $PROJECT_CSRF" -X POST \
+  "http://127.0.0.1:18868/projects/$PROJECT_ID/generate" \
+  -o "$RUNNER_TEMP/storyboard-submit.html"
+grep -qi 'location: .*#generation-state' "$RUNNER_TEMP/storyboard-submit.headers"
+# Stop the CI-only queued job: remaining tests exercise image access, not AI calls.
+php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$p->prepare("DELETE FROM generation_jobs WHERE project_id=?")->execute([(int)$argv[1]]);$p->prepare("UPDATE projects SET status=\x27draft\x27 WHERE id=?")->execute([(int)$argv[1]]);' "$PROJECT_ID"
+curl -fsS -b "$COOKIE" "$PROJECT_URL" > "$RUNNER_TEMP/project-after-queue.html"
+grep -q 'project-style-selector' "$RUNNER_TEMP/project-after-queue.html"
+grep -q 'project-custom-style' "$RUNNER_TEMP/project-after-queue.html"
+echo "Preset style hides manual input and storyboard POST returns to generation progress anchor"
 ASSET_ID="$(php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=aidrama_install_e2e","root","aidrama-ci-only");$s=$p->prepare("INSERT INTO assets (project_id,type,name,description,source_kind,image_status,created_at,updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())");$s->execute([(int)$argv[1],"prop","客户Logo","原始商标图","upload","pending"]);echo $p->lastInsertId();' "$PROJECT_ID")"
 test -n "$ASSET_ID"
 php -r '$im=imagecreatetruecolor(3,3);imagepng($im,$argv[1]);imagedestroy($im);' "$RUNNER_TEMP/client-logo.png"
