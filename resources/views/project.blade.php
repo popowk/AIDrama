@@ -471,6 +471,184 @@ if(imageDialog){
     if(image)image.removeAttribute('src');
   });
 }
+// Inline edits: save the record without navigating away or losing scroll position.
+async function sendInlineForm(form){
+  const response=await fetch(form.action,{
+    method:'POST',body:new FormData(form),credentials:'same-origin',redirect:'follow',
+    headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'},
+    cache:'no-store'
+  });
+  const contentType=(response.headers.get('content-type')||'').toLowerCase();
+  if(response.redirected || !contentType.includes('json'))
+    throw new Error('登录状态已过期或接口没有返回 JSON（HTTP '+response.status+'），请刷新或重新登录');
+  const result=await response.json();
+  if(!response.ok||result.ok===false) {
+    const detail=Object.values(result.errors||{}).flat().join('；');
+    throw new Error(detail||result.message||'操作失败（HTTP '+response.status+'）');
+  }
+  return result;
+}
+
+function syncAssetTotals(){
+  const active=document.querySelectorAll('.asset-fold-card:not(.is-archived)').length;
+  const total=document.getElementById('asset-active-count');
+  if(total)total.textContent=String(active);
+  const generateAll=document.getElementById('generate-all-assets-btn');
+  if(generateAll)
+    generateAll.disabled=!document.querySelector('.asset-fold-card:not(.is-archived) .asset-generate');
+}
+
+async function toggleAssetFold(form){
+  const id=Number(form.dataset.assetId);
+  const shell=document.getElementById('asset-shell-'+id);
+  const button=form.querySelector('button[type="submit"]');
+  if(!shell||!button)return;
+  const note=shell.querySelector('.asset-fold-feedback');
+  const wasArchived=shell.dataset.archived==='1';
+  button.disabled=true;
+  if(note){note.textContent='正在保存…';note.classList.remove('is-error');}
+  try{
+    const result=await sendInlineForm(form);
+    if(result.archived!==!wasArchived)
+      throw new Error('服务器返回的资产状态与操作不匹配，请检查状态');
+    const archived=Boolean(result.archived);
+    shell.dataset.archived=archived?'1':'0';
+    shell.classList.toggle('is-archived',archived);
+    const body=shell.querySelector('.asset-fold-body');
+    if(body)body.hidden=archived;
+    const foldLabel=shell.querySelector('.asset-fold-label');
+    if(foldLabel)foldLabel.textContent=archived?'已折叠 · 不参与生图':'';
+    form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
+    button.textContent=archived?'恢复资产':'移除 · 折叠';
+    if(note)note.textContent=archived?'已折叠，随时可以恢复。':'已恢复，继续编辑或生成图片。';
+    syncAssetTotals();
+  }catch(error){
+    if(note){note.textContent='操作失败：'+(error.message||String(error));note.classList.add('is-error');}
+  }finally{button.disabled=false;}
+}
+
+function inlineSaveMessage(form,message,failed){
+  let status=form.nextElementSibling;
+  if(!status||!status.classList.contains('inline-save-feedback')){
+    status=document.createElement('p');
+    status.className='inline-save-feedback';
+    status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    form.insertAdjacentElement('afterend',status);
+  }
+  status.textContent=(failed?'✕ ':'✓ ')+message;
+  status.classList.toggle('is-error',failed);
+  status.classList.toggle('is-success',!failed);
+}
+
+function siteRoute(url){
+  if(!url)return null;
+  try{
+    const parsed=new URL(url,window.location.href);
+    return parsed.origin===window.location.origin?parsed.toString():null;
+  }catch(error){return null;}
+}
+function updateAssetPreview(id,result){
+  if(!result?.image_url||!result?.thumbnail_url||!result?.download_url)return;
+  const shell=document.getElementById('asset-shell-'+id);
+  const card=document.getElementById('asset-'+id);
+  const preview=card?.querySelector('.asset-preview');
+  if(!shell||!preview)return;
+  const imageUrl=siteRoute(result.image_url);
+  const thumbnailUrl=siteRoute(result.thumbnail_url);
+  const downloadUrl=siteRoute(result.download_url);
+  if(!imageUrl||!thumbnailUrl||!downloadUrl)return;
+  const cache='?v='+Date.now();
+  const trigger=document.createElement('button');
+  trigger.type='button';trigger.className='asset-preview-trigger';
+  trigger.dataset.previewSrc=imageUrl+cache;
+  trigger.dataset.previewName=shell.dataset.assetName||'资产参考图';
+  trigger.dataset.downloadUrl=downloadUrl;
+  trigger.setAttribute('aria-label','预览'+trigger.dataset.previewName+'参考图');
+  const img=document.createElement('img');
+  img.src=thumbnailUrl+cache;
+  img.alt=trigger.dataset.previewName+'缩略图';
+  img.loading='lazy';img.decoding='async';img.width=176;img.height=132;
+  const label=document.createElement('span');
+  label.className='asset-preview-label';label.textContent='点击放大预览';
+  trigger.append(img,label);
+  trigger.addEventListener('click',()=>openAssetPreview(trigger));
+  const link=document.createElement('a');
+  link.className='button outline asset-download-button';
+  link.href=downloadUrl;link.textContent='↓ 下载原图';
+  preview.replaceChildren(trigger,link);
+  const button=card.querySelector('.asset-generate');
+  if(button){button.dataset.hasImage='1';button.textContent='重新生成图片';}
+  const upload=card.querySelector('.asset-upload button[type="submit"]');
+  if(upload)upload.textContent='替换真实素材';
+  card.dataset.pending='0';
+  const status=card.querySelector('.asset-status');
+  if(status)status.textContent=shell.dataset.sourceKind==='upload'?'已上传真实参考图':'AI 图片已生成';
+}
+
+document.addEventListener('submit',async event=>{
+  const form=event.target;
+  if(!(form instanceof HTMLFormElement))return;
+  if(form.matches('[data-inline-toggle="asset"]')){
+    event.preventDefault();
+    await toggleAssetFold(form);
+    return;
+  }
+  const kind=form.dataset.inlineSave;
+  if(!kind)return;
+  event.preventDefault();
+  const submit=form.querySelector('button[type="submit"]');
+  if(submit)submit.disabled=true;
+  inlineSaveMessage(form,'正在保存…',false);
+  try{
+    const result=await sendInlineForm(form);
+    const shell=form.closest('.asset-fold-card');
+    const card=form.closest('.shot-card');
+    if(kind==='asset-prompt'||kind==='asset-prompt-reset'){
+      const field=shell?.querySelector('.asset-prompt-form textarea');
+      if(field){
+        field.value=String(result.prompt??'');
+        field.dataset.lastSavedPrompt=field.value;
+      }
+      const summary=shell?.querySelector('.asset-prompt-editor summary');
+      if(summary)summary.textContent=result.prompt_override
+        ?'编辑手动生图提示词（单资产覆盖中）':'查看 / 编辑生图提示词（使用类别模板）';
+    }else if(kind==='asset-ratio'){
+      const field=shell?.querySelector('.asset-prompt-form textarea');
+      if(field && !result.prompt_override &&
+        field.value===(field.dataset.lastSavedPrompt??field.defaultValue)){
+        field.value=String(result.prompt??'');
+        field.dataset.lastSavedPrompt=field.value;
+      }
+    }else if(kind==='asset-upload'){
+      const id=Number(shell?.id.replace('asset-shell-',''));
+      if(id)updateAssetPreview(id,result);
+      const input=form.querySelector('input[type="file"]');
+      if(input)input.value='';
+    }else if(kind==='segments'){
+      if(scriptSource)scriptSource.value=String(result.script??'');
+      hasSavedScript=Boolean(result.has_script);
+      storyboardDirty=false;
+      syncGenerationButton();
+      const fullScriptPanel=document.getElementById('project-script-pane');
+      if(fullScriptPanel&&hasSavedScript)fullScriptPanel.hidden=false;
+    }else if(kind==='shot'&&card){
+      const heading=card.querySelector('.shot-head strong');
+      if(heading)heading.textContent=String(result.title??'');
+      const duration=card.querySelector('.shot-head .chip');
+      if(duration)duration.textContent=String(result.duration_seconds??'')+' 秒';
+      const prompt=card.querySelector('.prompt-output');
+      if(prompt)prompt.value='';
+    }
+    inlineSaveMessage(form,result.message||'保存成功',false);
+  }catch(error){
+    inlineSaveMessage(form,'保存失败：'+(error.message||String(error)),true);
+  }finally{if(submit)submit.disabled=false;}
+});
+
+document.querySelectorAll('.asset-prompt-form textarea').forEach(field=>{
+  field.dataset.lastSavedPrompt=field.value;
+});
+
 // Keep a precise failure stage instead of surfacing opaque Safari exceptions
 // such as "The string did not match the expected pattern".
 async function generateAsset(button,project,id,refresh=true){
@@ -513,8 +691,8 @@ async function generateAsset(button,project,id,refresh=true){
     stage='处理生成结果';
     if(data.status==='ready'){
       success=true;
-      if(status)status.textContent='图片生成成功，正在显示预览…';
-      if(refresh)window.location.reload();
+      if(status)status.textContent='图片已生成，正在更新预览…';
+      updateAssetPreview(id,data);
     }else if(data.status==='generating'){
       success=true; // A durable remote task is accepted; completion is polled separately.
       const card=document.getElementById('asset-'+id);
@@ -538,11 +716,16 @@ async function generateAsset(button,project,id,refresh=true){
       const card=document.getElementById('asset-'+id);
       if(card)card.dataset.pending='1';
     }
-  }finally{button.disabled=false;button.textContent=original;}
+  }finally{
+    button.disabled=false;
+    button.textContent=button.dataset.hasImage==='1'?'重新生成图片':original;
+  }
   return success;
 }
 async function generateAllAssets(button,project){
-  const buttons=Array.from(document.querySelectorAll('.asset-generate[data-has-image="0"]'));
+  const buttons=Array.from(document.querySelectorAll(
+    '.asset-fold-card:not(.is-archived) .asset-generate[data-has-image="0"]'
+  )).filter(item=>!item.disabled);
   if(buttons.length===0){alert('当前没有待生成的普通资产');return;}
   if(!confirm('将顺序生成 '+buttons.length+' 个普通资产，调用图片模型可能产生 API 费用。客户产品与 Logo 不会自动生成，确认继续？'))return;
   button.disabled=true;
@@ -555,7 +738,7 @@ async function generateAllAssets(button,project){
   }
   if(status)status.textContent='批量提交完成，已提交或生成 '+done+' / '+buttons.length+' 项；完成后将自动显示图片。';
   button.disabled=false;
-  if(done>0)window.location.reload();
+  syncAssetTotals();
 }
 async function pollImageAsset(id,project){
   const card=document.getElementById('asset-'+id);
@@ -568,7 +751,11 @@ async function pollImageAsset(id,project){
     if(!r.ok)return;
     const data=await r.json();
     const status=document.getElementById('asset-status-'+id);
-    if(data.status==='ready'){window.location.reload();return;}
+    if(data.status==='ready'){
+      updateAssetPreview(id,data);
+      if(button)button.disabled=false;
+      return;
+    }
     if(data.status==='generating'){
       if(status)status.textContent=data.message||'图片正在服务器生成（'+(data.stage||'等待')+'），请不要重复提交';
       if(button)button.disabled=true;
@@ -584,7 +771,7 @@ const assetProjectId=@json($project->id);
 const imageAssetCards=document.querySelectorAll('.asset-media');
 if(imageAssetCards.length){
   const check=()=>imageAssetCards.forEach(card=>{
-    if(card.dataset.pending==='1')
+    if(card.dataset.pending==='1' && card.closest('.asset-fold-card')?.dataset.archived!=='1')
       pollImageAsset(Number(card.id.replace('asset-','')),assetProjectId);
   });
   check();setInterval(check,4000);
