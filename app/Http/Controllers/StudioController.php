@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 use App\Services\StoryboardEngine;
 use App\Services\PromptBuilder;
 use App\Services\PromptPresets;
+use App\Services\CreativeLibrary;
+use App\Services\FrameProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -22,11 +24,19 @@ class StudioController
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
+            'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
+            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::STYLES))],
+            'skills_present'=>'sometimes|accepted',
+            'skill_keys'=>'sometimes|array|max:8',
+            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::SKILLS))],
         ]);
         $id=DB::table('projects')->insertGetId([
             'name'=>$v['name'],'script'=>$v['script'],'style'=>$v['style'],
             'shot_limit'=>(int)$v['shot_limit'],
             'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
+            'frame_ratio'=>$v['frame_ratio']??'landscape',
+            'style_preset'=>$v['style_preset']??'custom',
+            'creative_skills'=>json_encode(CreativeLibrary::skillIds($v['skill_keys']??[])),
             'created_at'=>now(),'updated_at'=>now(),
         ]);
         return redirect()->route('project.show',$id)->with('ok','项目已建立');
@@ -39,7 +49,10 @@ class StudioController
         $shots=DB::table('shots')->where('project_id',$id)->orderBy('sequence')->get();
         $assets=DB::table('assets')->where('project_id',$id)->orderBy('type')->orderBy('id')->get();
         $total=$shots->sum('duration_seconds');
-        return view('project',compact('project','shots','assets','total'));
+        $stylePresets=CreativeLibrary::styles();
+        $creativeSkills=CreativeLibrary::skills();
+        $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills'));
     }
     public function update(Request $request,int $id) {
         $this->project($id);
@@ -49,9 +62,17 @@ class StudioController
             'name'=>'required|string|max:191','script'=>'required|string|max:100000',
             'style'=>'required|string|max:191','shot_limit'=>['required',Rule::in([15,30])],
             'script_mode'=>['sometimes',Rule::in(['auto','talking','mixed'])],
+            'frame_ratio'=>['sometimes',Rule::in(['landscape','portrait'])],
+            'style_preset'=>['sometimes',Rule::in(array_keys(CreativeLibrary::STYLES))],
+            'skills_present'=>'sometimes|accepted',
+            'skill_keys'=>'sometimes|array|max:8',
+            'skill_keys.*'=>['string',Rule::in(array_keys(CreativeLibrary::SKILLS))],
         ]);
         $previousMax=DB::table('shots')->where('project_id',$id)->max('duration_seconds')??0;
         if ($previousMax>(int)$v['shot_limit']) return back()->withErrors(['shot_limit'=>'现有镜头超过选择的时长上限，请重新生成分镜。']);
+        if(isset($v['skills_present']))
+            $v['creative_skills']=json_encode(CreativeLibrary::skillIds($v['skill_keys']??[]));
+        unset($v['skills_present'],$v['skill_keys']);
         DB::table('projects')->where('id',$id)->update($v+['updated_at'=>now()]);
         return back()->with('ok','剧本设置已保存');
     }
@@ -75,6 +96,9 @@ class StudioController
                 'request_script'=>$project->script,'request_style'=>$project->style,
                 'request_shot_limit'=>$project->shot_limit,
                 'request_mode'=>$project->script_mode??'auto',
+                'request_ratio'=>$project->frame_ratio??'landscape',
+                'request_style_preset'=>$project->style_preset??'custom',
+                'request_skills'=>$project->creative_skills??null,
                 'created_at'=>now(),'updated_at'=>now(),
             ]);
             DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
@@ -127,6 +151,9 @@ class StudioController
         if(function_exists('set_time_limit'))@set_time_limit(360);
         try {
             $engine->setMode((string)($job->request_mode??'auto'));
+            $engine->setCreativeContext((string)($job->request_ratio??'landscape'),
+                (string)($job->request_style_preset??'custom'),
+                (string)($job->request_skills??''));
             $result=$engine->generate($job->request_script,$job->request_style,(int)$job->request_shot_limit);
             DB::transaction(function() use($id,$job,$result) {
                 $current=DB::table('generation_jobs')->where('id',$job->id)->lockForUpdate()->first();
@@ -152,6 +179,7 @@ class StudioController
                     $key=$asset['type'].'|'.$asset['name'];
                     $included[$key]=true;
                     $old=$previous->get($key);
+                    if($old)$asset['frame_ratio']=$old->frame_ratio??'inherit';
                     if($old &&
                         ($old->file_path || ($old->image_task_id && $old->image_status==='generating')) &&
                         ($old->source_kind==='upload' || ($asset['source_kind']??'generate')==='generate')) {
@@ -177,6 +205,7 @@ class StudioController
                         'description'=>$old->description,'prompt'=>$old->prompt,
                         'voice_description'=>$old->voice_description,
                         'source_kind'=>'upload','image_status'=>'uploaded',
+                        'frame_ratio'=>$old->frame_ratio??'inherit',
                         'file_path'=>$old->file_path,'created_at'=>now(),'updated_at'=>now(),
                     ]);
                 }
