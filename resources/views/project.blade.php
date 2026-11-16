@@ -49,7 +49,7 @@
 <button class="button outline" type="submit">{{ $a->file_path?'替换真实素材':'上传真实素材' }}</button>
 </form>
 @else
-<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
+<button class="button outline asset-generate" data-asset-id="{{ $a->id }}" data-has-image="{{ $a->file_path?'1':'0' }}" data-generate-url="{{ route('asset.generate',[$project->id,$a->id],false) }}" data-status-url="{{ route('asset.status',[$project->id,$a->id],false) }}" type="button" onclick="generateAsset(this,{{ $project->id }},{{ $a->id }})" @disabled($a->image_status==='generating')>{{ $a->file_path?'重新生成图片':'AI 生成图片' }}</button>
 @endif
 </div>
 </div>
@@ -121,28 +121,73 @@ if(initialGeneration==='generating'){
  refreshGeneration();
  setInterval(refreshGeneration,3500);
 }
+// Keep a precise failure stage instead of surfacing opaque Safari exceptions
+// such as "The string did not match the expected pattern".
 async function generateAsset(button,project,id,refresh=true){
   if(button.disabled)return false;
   button.disabled=true;
   const original=button.textContent;
   const status=document.getElementById('asset-status-'+id);
   if(status)status.textContent='正在请求图片模型，可能需要几分钟…';
-  let success=false;
+  let success=false,stage='准备请求',httpStatus=0;
   try{
-    const res=await fetch('/projects/'+project+'/assets/'+id+'/generate',{
+    const path=button.dataset.generateUrl;
+    if(!path || !path.startsWith('/') || path.startsWith('//'))
+      throw new Error('生图接口地址无效，请检查站点路由配置');
+    const csrf=document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if(!csrf)throw new Error('当前页面缺少登录校验信息，请刷新后重新登录');
+    stage='浏览器发送请求';
+    const res=await fetch(path,{
       method:'POST',
-      headers:{'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content,'Accept':'application/json'},
-      credentials:'same-origin'
+      headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json'},
+      credentials:'same-origin',redirect:'follow',cache:'no-store'
     });
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error||'HTTP '+res.status);
+    httpStatus=res.status;
+    stage='读取服务器响应';
+    const type=(res.headers.get('content-type')||'').toLowerCase();
+    if(res.redirected && new URL(res.url).pathname==='/login')
+      throw new Error('登录状态已过期，请重新登录后生成');
+    const body=await res.text();
+    if(!type.includes('json'))
+      throw new Error('服务器返回的不是 JSON（HTTP '+res.status+'，'+(type||'未知类型')+'），请检查 PHP / 反向代理日志');
+    stage='解析 JSON 响应';
+    let data;
+    try{data=JSON.parse(body);}
+    catch(e){throw new Error('服务器返回的 JSON 无效（HTTP '+res.status+'）');}
+    if(!res.ok){
+      stage='服务端拒绝生图';
+      if(res.status===419)throw new Error('页面会话已过期，请刷新后重新登录');
+      if(res.status===429)throw new Error('操作频繁（HTTP 429），请稍后再试');
+      throw new Error(data.error||data.message||'服务端错误 HTTP '+res.status);
+    }
+    stage='处理生成结果';
     if(data.status==='ready'){
-       success=true;
-       if(status)status.textContent='图片生成成功，准备显示预览';
-       if(refresh)window.location.reload();
-    }else if(status)status.textContent=data.message||'正在处理中，可继续查看状态。';
-  }catch(e){if(status)status.textContent='图片生成失败：'+e.message;}
-  finally{button.disabled=false;button.textContent=original;}
+      success=true;
+      if(status)status.textContent='图片生成成功，正在显示预览…';
+      if(refresh)window.location.reload();
+    }else if(data.status==='generating'){
+      const card=document.getElementById('asset-'+id);
+      if(card)card.dataset.pending='1';
+      if(status)status.textContent=data.message||'服务器正在生成图片，请勿重复提交';
+    }else{
+      throw new Error(data.error||data.message||'服务端未返回预期的图片任务状态');
+    }
+  }catch(e){
+    const detail=(e && e.message)?String(e.message):String(e);
+    const patternError=/The string did not match the expected pattern|Invalid URL|Failed to construct.*URL/i.test(detail);
+    if(status)status.textContent='图片生成失败【'+stage+(httpStatus?' / HTTP '+httpStatus:'')+'】：'+
+      (patternError?'浏览器无法识别当前请求地址，请刷新页面；仍失败请提供浏览器控制台和网络请求信息。':detail);
+    console.error('[AIDrama] Asset image request failed',{
+      project,id,stage,httpStatus,errorName:e?.name||'Error',message:detail,
+      endpoint:button.dataset.generateUrl||'(missing)'
+    });
+    // The server may still be generating after a browser/network disconnect.
+    // Poll its status rather than silently submitting a duplicate paid call.
+    if(stage==='浏览器发送请求'||stage==='读取服务器响应') {
+      const card=document.getElementById('asset-'+id);
+      if(card)card.dataset.pending='1';
+    }
+  }finally{button.disabled=false;button.textContent=original;}
   return success;
 }
 async function generateAllAssets(button,project){
@@ -165,24 +210,33 @@ async function pollImageAsset(id,project){
   const card=document.getElementById('asset-'+id);
   if(!card||card.dataset.pending!=='1')return;
   try{
-    const r=await fetch('/projects/'+project+'/assets/'+id+'/status',{credentials:'same-origin',cache:'no-store'});
+    const button=card.querySelector('.asset-generate');
+    const url=button?.dataset.statusUrl;
+    if(!url)return;
+    const r=await fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'});
     if(!r.ok)return;
     const data=await r.json();
+    const status=document.getElementById('asset-status-'+id);
     if(data.status==='ready'){window.location.reload();return;}
-    if(data.status==='error'){
+    if(data.status==='generating'){
+      if(status)status.textContent='图片正在服务器生成，请不要重复提交';
+      if(button)button.disabled=true;
+    }else{
       card.dataset.pending='0';
-      const status=document.getElementById('asset-status-'+id);
-      if(status)status.textContent='图片生成失败：'+(data.error||'可重新尝试');
-      const button=card.querySelector('.asset-generate');
+      if(data.status==='error' && status)
+        status.textContent='图片生成失败（服务器）：'+(data.error||'可重新尝试');
       if(button)button.disabled=false;
     }
-  }catch(e){}
+  }catch(e){console.warn('[AIDrama] Image status query failed',id,e?.name);}
 }
 const assetProjectId=@json($project->id);
-const pendingAssetCards=document.querySelectorAll('.asset-media[data-pending="1"]');
-if(pendingAssetCards.length){
- const check=()=>pendingAssetCards.forEach(card=>pollImageAsset(Number(card.id.replace('asset-','')),assetProjectId));
- check();setInterval(check,4000);
+const imageAssetCards=document.querySelectorAll('.asset-media');
+if(imageAssetCards.length){
+  const check=()=>imageAssetCards.forEach(card=>{
+    if(card.dataset.pending==='1')
+      pollImageAsset(Number(card.id.replace('asset-','')),assetProjectId);
+  });
+  check();setInterval(check,4000);
 }
 async function loadPrompt(shot,project){
  const type=document.getElementById('type-'+shot).value;
