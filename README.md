@@ -144,20 +144,23 @@ tail -n 60 /www/wwwlogs/<域名>.error.log
 如果诊断显示迁移未执行，先备份数据库，再从后台补齐迁移（或使用当前正式版的 `php artisan migrate --force` 并确认配置从 shared 加载），不要直接手动删除表或修改 migration 记录。若网站入口已经无法使用，先将最新 ZIP 解压到原站点目录覆盖 `public/index.php` 和完整版本代码，保留 shared/，然后重启 PHP-FPM 并查看上述日志。
 ### HTTP 500：Target class [view] does not exist
 
-较早版本的 `config/app.php` 没有显式保存 Laravel 默认 ServiceProvider 列表；在执行 Laravel `config:cache` 后，Laravel 的 `RegisterProviders` 会直接读取已缓存配置而跳过默认列表合并，因此可能遗漏 `Illuminate\View\ViewServiceProvider`（也可能遗漏 Session 等服务提供者）。网页于是报出 `Target class [view] does not exist`。
+在 v0.1.100 等旧版本的 GitHub Release 中，打包时排除了 `bootstrap/cache/` 目录；新版本目录又可能由宝塔上传程序设为 `mysql:mysql`。Laravel 在应用启动时无法写入 `packages.php`、`services.php`，可能最终表现为 `Target class [view] does not exist`。
 
-新版已在 `config/app.php` 写入完整默认 ServiceProvider 列表，并在启动时检测和清理旧版缺少服务提供者的 `bootstrap/cache/config.php`。已安装老版本可先执行以下**只清理自动生成缓存**的指令（保留 shared、MySQL 数据库、素材和管理员密码），随后在宝塔重启 PHP 8.4 服务：
+**立即修复旧版的安全命令：**
 
 ```bash
 SITE="/www/wwwroot/drama.tmd.pet"
 VER="$(cat "$SITE/shared/active-version")"
 CACHE="$SITE/releases/$VER/bootstrap/cache"
-if [ -d "$CACHE" ]; then
-  rm -f "$CACHE/config.php" "$CACHE/services.php" "$CACHE/packages.php"
-fi
+mkdir -p "$CACHE"
+chown -R www:www "$CACHE"
+chmod 750 "$CACHE"
+rm -f "$CACHE/config.php" "$CACHE/services.php" "$CACHE/packages.php" "$CACHE/routes-v7.php"
 ```
 
-再刷新登录页，成功恢复后通过后台「检查更新」升级到修正版。注意：错误日志显示的版本未必等于当前版本标记，应使用上面的动态版本路径检查。若仍有错误，请运行只读 `deploy/diagnose.php`，它现在会显示视图服务注册状态；不要清空数据库或删除 `shared/`。
+随后在宝塔重启 PHP 8.4 并访问 `/login`。这只清理生成缓存，不修改用户数据、`shared/.env`、安装锁和数据库。若其他运行用户与 `www` 不同，需按实际 PHP-FPM 用户调整目录属主。
+
+**根治方案：** 新版代码在启动时把五种 Laravel 生成缓存（服务、包、配置、路由、事件）放在 `shared/storage/framework/cache/bootstrap/vX.Y.Z/`。发行包中的 `releases/` 可以只读，且无需存在 `bootstrap/cache`。每个版本缓存独立，避免旧版生成文件跨版本残留；切换版本前检查私有缓存目录可写。诊断命令 `/www/server/php/84/bin/php <实际站点>/deploy/diagnose.php` 会显示实际缓存路径、`view` 服务绑定及相关写入状态。若升级后仍出现 HTTP 500，请提供最新时间的日志而不是此前旧日志。
 
 ## 目前功能与限制
 
