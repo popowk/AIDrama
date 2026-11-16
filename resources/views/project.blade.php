@@ -538,6 +538,9 @@ async function toggleAssetFold(form){
     form.action=archived?form.dataset.restoreUrl:form.dataset.archiveUrl;
     button.textContent=archived?'恢复资产':'移除 · 折叠';
     if(note)note.textContent='';
+    // Previously adapted prompts may still mention assets now folded.
+    // Clear them and require a fresh model-generated prompt on next click.
+    document.querySelectorAll('.prompt-output').forEach(area=>area.value='');
     syncAssetTotals();
   }catch(error){
     if(note){note.textContent='操作失败：'+(error.message||String(error));note.classList.add('is-error');}
