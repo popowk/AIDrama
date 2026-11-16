@@ -50,6 +50,7 @@ class StudioController
         $id=DB::table('projects')->insertGetId([
             'name'=>$v['name'],'script'=>$v['script']??'','style'=>$style,
             'input_kind'=>$kind,'storyboard_source'=>$v['storyboard_source']??null,
+            'storyboard_dirty'=>$kind==='storyboard',
             'shot_limit'=>(int)$v['shot_limit'],
             'script_mode'=>$v['script_mode']??'auto','status'=>'draft',
             'frame_ratio'=>$v['frame_ratio']??'landscape',
@@ -103,13 +104,15 @@ class StudioController
         $source=(string)($v['storyboard_source']??'');
         $this->validateSource($kind,(string)($v['script']??''),$source);
         if($kind==='storyboard' && trim($source)!==trim((string)($project->storyboard_source??''))) {
-            // Source changed: never treat an old expansion as the new source.
-            $v['script']='';
+            // Keep old script and segments as a recoverable draft, but block
+            // regenerating assets until this new source is expanded.
+            $v['storyboard_dirty']=true;
+        } elseif((string)($v['script']??'')!==(string)($project->script??'')) {
+            // An edited full script is now the authoritative source.
             $v['script_segments']=null;
-        } elseif((string)($v['script']??'')!==(string)($project->script??'')
-            || $kind!==($project->input_kind??'script')) {
-            // A manually edited merged script supersedes stale segment cards.
-            $v['script_segments']=null;
+            $v['storyboard_dirty']=false;
+        } elseif($kind!=='storyboard') {
+            $v['storyboard_dirty']=false;
         }
         $v['input_kind']=$kind;
         $preset=$v['style_preset']??($project->style_preset??'custom');
@@ -132,9 +135,10 @@ class StudioController
     }
     public function generate(int $id) {
         $project=$this->project($id);
-        if(trim((string)$project->script)==='')
+        if(trim((string)$project->script)==='' ||
+            (($project->input_kind??'script')==='storyboard' && ($project->storyboard_dirty??false)))
             return redirect()->to(route('project.show',$id).'#script-editor')
-                ->withErrors(['script'=>'请先根据分镜表格扩写剧本，或输入完整剧本并保存。']);
+                ->withErrors(['script'=>'请先根据最新分镜表格逐镜扩写剧本，或选择完整剧本模式并保存。']);
         $created=DB::transaction(function() use($id) {
             $project=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
             if (!$project) abort(404);
@@ -227,7 +231,7 @@ class StudioController
             return redirect()->to(route('project.show',$id).'#script-segments')
                 ->withErrors(['parts'=>'完整剧本超过 100000 字符，请缩短分段剧本。']);
         DB::table('projects')->where('id',$id)->update([
-            'script'=>$combined,
+            'script'=>$combined,'storyboard_dirty'=>false,
             'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
             'updated_at'=>now(),
         ]);
@@ -292,6 +296,7 @@ class StudioController
                         throw new RuntimeException('扩写任务已过期，结果不会覆盖当前剧本。');
                     DB::table('projects')->where('id',$id)->update([
                         'script'=>StoryboardTable::combine($segments),
+                        'storyboard_dirty'=>false,
                         'script_segments'=>json_encode($segments,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
                         'status'=>DB::table('shots')->where('project_id',$id)->exists()?'ready':'draft',
                         'updated_at'=>now(),
