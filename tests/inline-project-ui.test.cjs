@@ -10,6 +10,9 @@ for(const marker of [
   'data-inline-save="segments"', 'data-inline-save="shot"',
   'async function toggleAssetFold(form)', 'async function sendInlineForm(form)',
   'function updateAssetPreview(id,result)',
+  'function updateShotReferenceList(shotId,references)',
+  'function updateProjectShotReferences(map)',
+  'updateProjectShotReferences(result.shot_references)',
 ]) assert(view.includes(marker),'Missing inline UI hook: '+marker);
 assert(!view.includes('已移除资产（'),'Assets must fold in their original position');
 assert(!view.includes('移除资产（可恢复）'),'No old separate archive flow');
