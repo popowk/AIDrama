@@ -213,25 +213,36 @@
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
-<div class="inline-fields"><label>开口之前必须完成的动作<textarea rows="2" name="action_before" placeholder="可边说边做的动作请写在画面与动作里">{{ $shot->action_before }}</textarea></label>
-<label>口播/台词（同一框可多人轮流说）
-<textarea rows="4" name="dialogue" placeholder="悟空：二师兄，看俺这个！&#10;八戒：这东西可真省心。">{{ $shot->dialogue }}</textarea>
-<small class="muted">多人对白请每行写“人物名：台词”，保留先后顺序；同一镜头可边动作边对话。</small></label></div>
-<div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="conversation" @selected($shot->delivery==='conversation')>人物之间对话（看向对方）</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
+<p class="hint">人物动作、台词分配、说话方式和镜头内交流由 AI 根据剧本与画面自行判断，无需逐项设置。</p>
+<label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
-<div class="shot-reference-list" id="shot-reference-{{ $shot->id }}" aria-live="polite">
-<strong class="small">本镜参考资产图</strong>
+<div class="shot-reference-list" id="shot-reference-{{ $shot->id }}">
+<div class="shot-reference-toolbar">
+<strong class="small">本镜参考资产图（可多选）</strong>
+<span class="shot-selection-mode muted small">{{ ($shotSelections[(string)$shot->id]['mode']??'auto')==='manual'?'人工已调整':(($shotSelections[(string)$shot->id]['mode']??'auto')==='ai'?'AI 已识别':'初步匹配 · 可 AI 识别') }}</span>
+<button class="button outline" type="button" onclick="recognizeShotAssets({{ $shot->id }},{{ $project->id }},this)" @disabled($project->status==='generating')>AI 识别本镜资产</button>
+</div>
+<form class="shot-assets-form" data-shot-id="{{ $shot->id }}" data-save-url="{{ route('shot.assets.save',[$project->id,$shot->id]) }}" method="post">
+@csrf
 <div class="shot-reference-items">
-@forelse(($shotReferences[(string)$shot->id]??[]) as $reference)
-<span class="shot-reference-item">请提供「{{ $reference['name'] }}」图片 · {{ $reference['required']?'必需':'可选' }}</span>
+@forelse($allAssets as $asset)
+<label class="shot-reference-option" data-asset-id="{{ $asset->id }}" @if($asset->is_archived) hidden @endif>
+<input type="checkbox" name="asset_ids[]" value="{{ $asset->id }}"
+  @checked(in_array((int)$asset->id,$shotSelections[(string)$shot->id]['selected_ids']??[],true))
+  @disabled($project->status==='generating'||$asset->is_archived)>
+<span class="shot-asset-name">{{ $asset->name }}</span>
+<span class="muted small">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$asset->type]??$asset->type }}</span>
+</label>
 @empty
-<span class="muted small">本镜暂无匹配的参考资产，已折叠或无关资产不会列出。</span>
+<span class="muted small">资产清单为空，请先生成资产。</span>
 @endforelse
 </div>
+</form>
+<div class="shot-reference-status small muted" role="status" aria-live="polite">本镜当前选用 {{ count($shotReferences[(string)$shot->id]??[]) }} 项；折叠资产不参与提示词生成。</div>
 </div>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
-<textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly placeholder="点击「生成适配提示词」查看结果..."></textarea>
+<textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly aria-label="生成后自动展开的视频提示词" placeholder="点击「生成适配提示词」查看结果..."></textarea>
 </article>
 @endforeach
 @else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
