@@ -215,3 +215,12 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 
 .shot-assets-details>summary{cursor:pointer;padding:6px 0;font-size:12px;color:var(--muted,#a9b8d4)}
 .shot-assets-details[open]>summary{margin-bottom:8px}
+
+/* Full-resolution image access must remain available without JavaScript. */
+.asset-preview-trigger{text-decoration:none}
+.asset-open-original{display:inline-block;color:#aac3ff;text-align:center;text-decoration:underline;text-underline-offset:3px;font-size:12px;padding:2px 4px}
+.asset-open-original:hover,.asset-open-original:focus-visible{color:#e7edff}
+.asset-lightbox{z-index:9999}
+.asset-lightbox-actions{flex-wrap:wrap}
+.asset-lightbox-actions .button{white-space:normal}
+@media(max-width:540px){.asset-lightbox-actions .button{padding:7px 10px;font-size:11px}.asset-open-original{font-size:11px}}
