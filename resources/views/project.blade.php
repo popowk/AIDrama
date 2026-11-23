@@ -216,16 +216,8 @@
 <article class="shot-card" id="shot-{{ $shot->id }}"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
-<label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
-<div class="shot-dialogue" aria-label="本镜 AI 生成的对白或旁白">
-<div class="shot-dialogue-heading"><strong>本镜对白 / 旁白</strong><span class="muted small">由 AI 根据剧本判断，无需单独设置</span></div>
-@if(trim((string)($shot->dialogue??''))!=='')
-<div class="shot-dialogue-content">{{ $shot->dialogue }}</div>
-@else
-<div class="shot-dialogue-empty">本镜 AI 未提取到对白或旁白。如原剧本中有台词，请检查这条分镜是否遗漏。</div>
-@endif
-</div>
-<p class="hint">说话人、说话方式、人物动作及视线关系由 AI 自动处理；分镜提示词仍使用后台保存的原始对白。</p>
+<label>画面与动作（含台词）<textarea rows="6" name="shot_content" maxlength="45000" required placeholder="镜头画面及人物动作；有台词时在同一框内以【台词 / 旁白】分隔">{{ \App\Services\ShotText::format($shot) }}</textarea></label>
+<p class="hint">画面、动作和人物台词都在上方同一框中。AI 生成的台词会自动显示；你也可以直接修改并保存。</p>
 <label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
@@ -287,6 +279,15 @@
 {{-- This helper is served inline: the updater syncs CSS but not new public JS files. --}}
 <script>{!! file_get_contents(public_path('storyboard-state.js')) !!}</script>
 <script>
+function sizeShotContent(field){
+  if(!field)return;
+  field.style.height='auto';
+  field.style.height=Math.max(145,field.scrollHeight+8)+'px';
+}
+document.querySelectorAll('textarea[name="shot_content"]').forEach(field=>{
+  sizeShotContent(field);
+  field.addEventListener('input',()=>sizeShotContent(field));
+});
 const projectStyleSelector=document.getElementById('project-style-selector');
 if(projectStyleSelector){
   const customLabel=document.getElementById('project-custom-style');
@@ -949,6 +950,11 @@ document.addEventListener('submit',async event=>{
       if(duration)duration.textContent=String(result.duration_seconds??'')+' 秒';
       const prompt=card.querySelector('.prompt-output');
       if(prompt)prompt.value='';
+      const text=card.querySelector('textarea[name="shot_content"]');
+      if(text && typeof result.shot_content==='string'){
+        text.value=result.shot_content;
+        sizeShotContent(text);
+      }
       if(result.references)updateShotReferenceList(card.id.replace('shot-',''),result.references);
     }
     if(ratioField)showRatioNotice(form,'✓','success');

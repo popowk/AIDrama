@@ -10,6 +10,8 @@ use App\Services\StoryboardTable;
 use App\Services\ProjectSnapshots;
 use App\Services\AssetReferencePicker;
 use App\Services\ShotAssetSelection;
+use App\Services\ShotText;
+use App\Services\ShotDelivery;
 use App\Services\ScriptExpansionEngine;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
@@ -591,6 +593,31 @@ class StudioController
         }
     }
 
+    private function validateShotText(array $parts):void
+    {
+        $errors=[];
+        if(trim((string)$parts['visual'])==='')$errors['shot_content']=['请输入镜头画面描述'];
+        if(mb_strlen((string)$parts['visual'])>20000)
+            $errors['shot_content']=['画面描述不能超过 20000 字'];
+        if(mb_strlen((string)$parts['dialogue'])>20000)
+            $errors['shot_content']=['台词不能超过 20000 字'];
+        if(mb_strlen((string)$parts['action_before'])>5000)
+            $errors['shot_content']=['开口前动作不能超过 5000 字'];
+        if($errors)throw \Illuminate\Validation\ValidationException::withMessages($errors);
+    }
+
+    private function updatedShotDelivery(object $saved,array $parts):string
+    {
+        $spoken=trim((string)$parts['dialogue']);
+        if($spoken==='')return 'none';
+        if(trim((string)($saved->dialogue??''))===$spoken &&
+            in_array($saved->delivery??'',['on_camera','conversation','voiceover'],true))
+            return $saved->delivery;
+        if(in_array($saved->delivery??'',['conversation','voiceover'],true))
+            return $saved->delivery;
+        return ShotDelivery::normalize('on_camera',$spoken,(string)$parts['visual']);
+    }
+
     public function saveShot(Request $request,int $id,int $shot) {
         $project=$this->project($id);
         if($project->status==='generating') {
@@ -600,19 +627,37 @@ class StudioController
                 ->withErrors(['shot'=>$message]);
         }
         if (!DB::table('shots')->where('id',$shot)->where('project_id',$id)->exists()) abort(404);
-        $v=$request->validate([
-            'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
-            'dialogue'=>'nullable|string|max:20000','action_before'=>'nullable|string|max:5000',
-            'on_screen_text'=>'nullable|string|max:5000',
-            'delivery'=>['sometimes',Rule::in(['on_camera','conversation','voiceover','none'])],
-            'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
-        ]);
+        $single=$request->exists('shot_content');
+        if($single){
+            $v=$request->validate([
+                'title'=>'required|string|max:191',
+                'shot_content'=>'required|string|max:45000',
+                'on_screen_text'=>'nullable|string|max:5000',
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+            $parts=ShotText::parse($v['shot_content']);
+            $this->validateShotText($parts);
+            unset($v['shot_content']);
+            $original=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
+            $v=array_merge($v,$parts);
+            $v['delivery']=$this->updatedShotDelivery($original,$parts);
+        }else{
+            // Backward-compatible machine and legacy editor payloads.
+            $v=$request->validate([
+                'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
+                'dialogue'=>'nullable|string|max:20000','action_before'=>'nullable|string|max:5000',
+                'on_screen_text'=>'nullable|string|max:5000',
+                'delivery'=>['sometimes',Rule::in(['on_camera','conversation','voiceover','none'])],
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+        }
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
         if($request->expectsJson()){
             $saved=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
             return response()->json([
                 'ok'=>true,'message'=>'镜头已保存',
                 'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
+                'shot_content'=>ShotText::format($saved),
                 'references'=>ShotAssetSelection::references($project,$saved),
             ]);
         }
@@ -644,7 +689,21 @@ class StudioController
         if(!$item)abort(404);
         if($project->status==='generating')
             return response()->json(['ok'=>false,'message'=>'分镜生成过程中不能重新识别资产'],409);
-        if($request->has('visual')){
+        if($request->exists('shot_content')){
+            $edited=$request->validate([
+                'title'=>'required|string|max:191',
+                'shot_content'=>'required|string|max:45000',
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+            $parts=ShotText::parse($edited['shot_content']);
+            $this->validateShotText($parts);
+            $item=clone $item;
+            $item->title=$edited['title'];
+            foreach($parts as $field=>$value)$item->$field=$value;
+            $item->delivery=$this->updatedShotDelivery(
+                DB::table('shots')->where('id',$shot)->first(),$parts
+            );
+        }elseif($request->has('visual')){
             $edited=$request->validate([
                 'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
@@ -673,7 +732,22 @@ class StudioController
         ]);
         // Use the current editor values when provided, without changing the
         // saved shot. This avoids generating stale prompts for unsaved edits.
-        if($request->has('visual')) {
+        if($request->exists('shot_content')){
+            $editing=$request->validate([
+                'title'=>'required|string|max:191',
+                'shot_content'=>'required|string|max:45000',
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+            $parts=ShotText::parse($editing['shot_content']);
+            $this->validateShotText($parts);
+            $item=clone $item;
+            $item->title=$editing['title'];
+            $item->duration_seconds=$editing['duration_seconds'];
+            foreach($parts as $field=>$value)$item->$field=$value;
+            $item->delivery=$this->updatedShotDelivery(
+                DB::table('shots')->where('id',$shot)->first(),$parts
+            );
+        }elseif($request->has('visual')){
             $editing=$request->validate([
                 'title'=>'required|string|max:191',
                 'visual'=>'required|string|max:20000',

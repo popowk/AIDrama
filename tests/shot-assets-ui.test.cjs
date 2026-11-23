@@ -9,18 +9,18 @@ const end=view.indexOf('</form>',start);
 assert(start>=0&&end>start,'Shot form missing');
 const shot=view.slice(start,end);
 assert(!shot.includes('name="action_before"'),'No redundant pre-dialogue action field');
-assert(!shot.includes('name="dialogue"'),'No redundant dialogue input');
+assert(!shot.includes('name="dialogue"'),'No separate dialogue input');
 assert(!shot.includes('name="delivery"'),'No redundant voice-mode selector');
-assert(shot.includes('name="visual"')&&shot.includes('name="duration_seconds"'),
-    'Keep core shot visual and duration editing');
-assert(shot.includes('class="shot-dialogue-content"')&&
-    shot.includes('{{ $shot->dialogue }}')&&
-    shot.includes('white-space')===false,
-    'Render saved AI dialogue as visible text without new edit controls');
-assert(shot.includes('本镜 AI 未提取到对白或旁白'),
-    'Distinguish legitimately silent shots from AI extraction omissions');
-assert(css.includes('.shot-dialogue-content{white-space:pre-wrap'),
-    'Preserve speaker line breaks in visible conversation transcript');
+assert(!shot.includes('name="visual"'),'No separate visual input');
+assert(shot.includes('name="shot_content"')&&shot.includes('name="duration_seconds"'),
+    'Keep exactly one textarea for visual/action/dialogue and the shot duration');
+assert(shot.includes('ShotText::format($shot)'),
+    'Composite textarea renders both AI generated visual and stored speech');
+assert(!shot.includes('class="shot-dialogue"')&&
+    !view.includes('class="shot-dialogue-content"'),
+    'Remove the second spoken-content section completely');
+assert(css.includes('.shot-card textarea[name="shot_content"]'),
+    'Unified shot textarea should be easy to read and expand');
 assert(view.includes('class="shot-assets-form"') &&
   view.includes('type="checkbox" name="asset_ids[]"') &&
   view.includes('onclick="recognizeShotAssets('),
@@ -41,6 +41,10 @@ assert(view.includes('form.dataset.saveUrl') &&
 assert(view.includes("payload.set('asset_ids_present','1')") &&
   view.includes("payload.append('asset_ids[]',String(id))"),
   'Prompt input includes current selected checkbox assets');
+assert(view.includes('function sizeShotContent(field)') &&
+  view.includes('sizeShotContent(field);') &&
+  view.includes('textarea[name="shot_content"]'),
+  'Visual, action and dialogue editor expands automatically');
 assert(view.includes('function expandPromptArea(area)') &&
   view.includes('area.scrollHeight+8') &&
   view.includes('expandPromptArea(area);'),
