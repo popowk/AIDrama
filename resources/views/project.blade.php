@@ -226,6 +226,31 @@
 @endforeach
 @else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
 </section>
+<section class="panel project-history" id="generation-history">
+<details>
+<summary>历史分镜与资产版本 <span class="chip">{{ $snapshots->count() }} 个近期记录</span></summary>
+<p class="hint">每次重新生成成功写入新分镜之前，会自动备份原有的镜头、资产、图片关联、手动提示词与折叠状态。恢复前也会自动备份当前版本。<strong>恢复仅替换分镜和资产，不会覆盖当前剧本原稿或分镜表格。</strong> 历史图片仍使用原有的服务器私有文件。</p>
+@if($snapshots->isNotEmpty())
+<div class="history-rows">
+@foreach($snapshots as $snapshot)
+<div class="history-row">
+<div class="history-meta">
+<strong>{{ $snapshot->reason==='before_restore'?'恢复前自动备份':'重新生成前自动备份' }}</strong>
+<small class="muted">版本 #{{ $snapshot->id }} · {{ $snapshot->created_at }} · {{ $snapshot->shot_count }} 个镜头 · {{ $snapshot->asset_count }} 个资产</small>
+</div>
+<form method="post" action="{{ route('project.snapshot.restore',[$project->id,$snapshot->id]) }}"
+  onsubmit="return confirm('将恢复此历史分镜及资产版本，并把当前版本自动备份。当前剧本原稿不会更改，确认恢复吗？')">
+@csrf
+<button class="button outline" type="submit" @disabled($project->status==='generating')>恢复此版本</button>
+</form>
+</div>
+@endforeach
+</div>
+@else
+<p class="hint">暂无历史版本。下次重新生成已有分镜或资产时，会自动建立第一份快照。</p>
+@endif
+</details>
+</section>
 {{-- This helper is served inline: the updater syncs CSS but not new public JS files. --}}
 <script>{!! file_get_contents(public_path('storyboard-state.js')) !!}</script>
 <script>
@@ -411,8 +436,9 @@ if(['#script-editor','#script-segments'].includes(window.location.hash)){
 }
 const generationUrl=@json(route('generation.status',$project->id));
 const runUrl=@json(route('generation.run',$project->id));
+const retryUrl=@json(route('generation.retry',$project->id));
 const initialGeneration=@json($project->status);
-let runningRequest=false,taskReloaded=false;
+let runningRequest=false,taskReloaded=false,generationPollTimer=null;
 const generationBox=document.getElementById('generation-state');
 function renderGeneration(info){
  if(!generationBox)return;
@@ -423,6 +449,13 @@ function renderGeneration(info){
    const strong=document.createElement('strong');strong.textContent='生成失败，可重试';
    const p=document.createElement('p');p.className='muted';p.textContent=info.error||'请求失败，请检查模型连接。';
    generationBox.replaceChildren(strong,p);
+   if(info.can_retry!==false) {
+     const retry=document.createElement('button');
+     retry.type='button';retry.className='button outline';
+     retry.textContent='重试上次生成任务（使用原参数）';
+     retry.addEventListener('click',()=>retryLastGeneration(retry));
+     generationBox.append(retry);
+   }
  } else if(info.status==='done') generationBox.innerHTML='<strong>✓ '+(scriptTask?'剧本扩写完成':'分镜已生成')+'</strong><p class="muted">正在刷新最新结果…</p>';
 }
 function runGeneration(){
@@ -451,10 +484,36 @@ async function refreshGeneration(){
    }
  }catch(e){}
 }
-if(initialGeneration==='generating'){
+function ensureGenerationPolling(){
+ if(generationPollTimer===null)
+   generationPollTimer=setInterval(refreshGeneration,3500);
  refreshGeneration();
- setInterval(refreshGeneration,3500);
 }
+async function retryLastGeneration(button){
+ if(button.disabled)return;
+ button.disabled=true;
+ button.textContent='正在重新排队…';
+ try{
+   const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
+   if(!csrf)throw new Error('页面会话信息缺失，请刷新后重新登录');
+   const res=await fetch(retryUrl,{
+     method:'POST',credentials:'same-origin',cache:'no-store',
+     headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json'}
+   });
+   const data=await res.json();
+   if(!res.ok||!data.ok)throw new Error(data.message||'HTTP '+res.status);
+   renderGeneration({status:'queued',kind:'shots'});
+   ensureGenerationPolling();
+ }catch(e){
+   button.disabled=false;
+   button.textContent='重试上次生成任务（使用原参数）';
+   const error=document.createElement('p');
+   error.className='muted';error.textContent='重试失败：'+String(e?.message||e);
+   generationBox?.append(error);
+ }
+}
+if(initialGeneration==='generating')ensureGenerationPolling();
+else if(initialGeneration==='error')refreshGeneration();
 // Native dialog keeps the full-resolution image out of the asset list.
 function openAssetPreview(button){
   const dialog=document.getElementById('asset-lightbox');
