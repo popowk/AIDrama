@@ -188,3 +188,10 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .history-row button{white-space:normal;font-size:12px;padding:9px 12px}
 #generation-state button{margin-top:10px}
 @media(max-width:560px){.history-row{flex-direction:column;align-items:flex-start}.history-row form{width:100%}}
+
+/* Each saved shot shows only its matching, currently active material requests. */
+.shot-reference-list{padding:12px 13px;margin:7px 0 11px;border:1px solid var(--line);border-radius:10px}
+.shot-reference-list>strong{display:block;margin-bottom:8px}
+.shot-reference-items{display:flex;align-items:flex-start;flex-wrap:wrap;gap:7px 9px}
+.shot-reference-item{border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;max-width:100%}
+@media(max-width:560px){.shot-reference-items{flex-direction:column}.shot-reference-item{width:100%}}
