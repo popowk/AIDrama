@@ -50,15 +50,17 @@ try {
     $json=json_decode((string)$result->getContent(),true);
     assertInline($result->getStatusCode()===200 &&
         $json['archived']===true &&
+        isset($json['shot_references'][(string)$shot]) &&
         DB::table('assets')->where('id',$asset)->value('is_archived')==1,
-        'archive must return JSON with persistent folded state');
+        'archive must return shot references and persistent folded state');
 
     $result=$api->restore($id,$asset);
     $json=json_decode((string)$result->getContent(),true);
     assertInline($result->getStatusCode()===200 &&
         $json['archived']===false &&
+        isset($json['shot_references'][(string)$shot]) &&
         DB::table('assets')->where('id',$asset)->value('is_archived')==0,
-        'restore must return JSON with same asset ID');
+        'restore must return shot references with same asset ID');
 
     $request=ajaxRequest(['prompt'=>'只属于厂房的图像提示词']);
     app()->instance('request',$request);
@@ -100,8 +102,9 @@ try {
     $result=(new StudioController())->saveShot($request,$id,$shot);
     $json=json_decode((string)$result->getContent(),true);
     assertInline($result->getStatusCode()===200 &&
-        $json['title']==='编辑后的镜头'&&$json['duration_seconds']===9,
-        'shot save should provide new heading for inline update');
+        $json['title']==='编辑后的镜头'&&$json['duration_seconds']===9 &&
+        is_array($json['references']),
+        'shot save should provide heading, duration and asset references for inline update');
 
     // Test the real authenticated upload flow with a tiny local PNG. No
     // external image service is called and the private file is cleaned up.
