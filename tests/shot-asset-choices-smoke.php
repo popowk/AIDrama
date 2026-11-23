@@ -180,6 +180,73 @@ try {
         count(ShotAssetSelection::references($project,
             DB::table('shots')->where('id',$shotId)->first()))===2,
         'failed AI recognition keeps existing choices unchanged');
+    // Newly generated storyboards receive per-shot asset choices directly
+    // from the same storyboard text-model response (no second paid model call).
+    $generatedId=DB::table('projects')->insertGetId([
+        'name'=>'初次生成 AI 资产预选','script'=>'悟空展示设备。',
+        'status'=>'generating','style'=>'3D国风动画',
+        'shot_limit'=>15,'script_mode'=>'mixed','video_mode'=>'short',
+        'created_at'=>now(),'updated_at'=>now(),
+    ]);
+    try{
+        DB::table('generation_jobs')->insert([
+            'project_id'=>$generatedId,'kind'=>'shots','status'=>'queued',
+            'attempts'=>0,'request_script'=>'悟空在大棚展示设备',
+            'request_style'=>'3D国风动画','request_shot_limit'=>15,
+            'created_at'=>now(),'updated_at'=>now(),
+        ]);
+        $engine=new class extends \App\Services\StoryboardEngine {
+            public function generate(string $script,string $style,int $limit):array {
+                return [
+                    'script_mode'=>'mixed',
+                    'shots'=>[
+                        ['title'=>'悟空展示产品','visual'=>'悟空向前举起设备',
+                            'dialogue'=>'悟空：看好了。','action_before'=>'',
+                            'delivery'=>'conversation','duration_seconds'=>7,
+                            'on_screen_text'=>'','prompt'=>'模型镜头提示词',
+                            'asset_names'=>['悟空','中维AOV太阳能球机']],
+                        ['title'=>'空镜头','visual'=>'树影晃动','dialogue'=>'',
+                            'action_before'=>'','delivery'=>'none','duration_seconds'=>4,
+                            'on_screen_text'=>'','prompt'=>'模型空镜提示词',
+                            'asset_names'=>[]],
+                    ],
+                    'assets'=>[
+                        ['type'=>'character','name'=>'悟空','description'=>'人物',
+                            'source_kind'=>'generate','image_status'=>'pending',
+                            'frame_ratio'=>'inherit','voice_description'=>'男声','prompt'=>'人物参考'],
+                        ['type'=>'prop','name'=>'中维AOV太阳能球机','description'=>'产品',
+                            'source_kind'=>'upload','image_status'=>'pending',
+                            'frame_ratio'=>'inherit','voice_description'=>null,'prompt'=>'设备参考'],
+                        ['type'=>'prop','name'=>'无关包装盒','description'=>'未出镜',
+                            'source_kind'=>'upload','image_status'=>'pending',
+                            'frame_ratio'=>'inherit','voice_description'=>null,'prompt'=>'包装参考'],
+                    ],
+                ];
+            }
+        };
+        $generation=(new StudioController())->runGeneration($generatedId,$engine);
+        $generatedBody=json_decode((string)$generation->getContent(),true);
+        assertChoices(($generatedBody['status']??'')==='done',
+            'new storyboard generation completed');
+        $createdShots=DB::table('shots')->where('project_id',$generatedId)->orderBy('sequence')->get();
+        $createdAssets=DB::table('assets')->where('project_id',$generatedId)->get();
+        $shotSelections=ShotAssetSelection::forProject($generatedId,$createdShots,$createdAssets);
+        assertChoices($createdShots->count()===2 &&
+            $shotSelections[(string)$createdShots[0]->id]['mode']==='ai' &&
+            $shotSelections[(string)$createdShots[1]->id]['mode']==='ai' &&
+            count($shotSelections[(string)$createdShots[0]->id]['selected_ids'])===2 &&
+            count($shotSelections[(string)$createdShots[1]->id]['selected_ids'])===0,
+            'storyboard AI pre-selects IDs including an intentionally empty shot');
+        $chosenNames=$createdAssets->whereIn('id',
+            $shotSelections[(string)$createdShots[0]->id]['selected_ids'])->pluck('name')->all();
+        assertChoices(in_array('悟空',$chosenNames,true) &&
+            in_array('中维AOV太阳能球机',$chosenNames,true) &&
+            !in_array('无关包装盒',$chosenNames,true),
+            'AI preselection never includes unrelated package assets');
+    }finally{
+        DB::table('projects')->where('id',$generatedId)->delete();
+    }
+
     echo "Shot asset checkboxes, AI matching, manual zero, fold/restore, snapshots and prompt overrides passed\n";
 }finally{
     app()->instance('request',$originalRequest);
