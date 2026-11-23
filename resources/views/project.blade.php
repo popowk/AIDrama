@@ -217,7 +217,15 @@
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
-<p class="hint">人物动作、台词分配、说话方式和镜头内交流由 AI 根据剧本与画面自行判断，无需逐项设置。</p>
+<div class="shot-dialogue" aria-label="本镜 AI 生成的对白或旁白">
+<div class="shot-dialogue-heading"><strong>本镜对白 / 旁白</strong><span class="muted small">由 AI 根据剧本判断，无需单独设置</span></div>
+@if(trim((string)($shot->dialogue??''))!=='')
+<div class="shot-dialogue-content">{{ $shot->dialogue }}</div>
+@else
+<div class="shot-dialogue-empty">本镜 AI 未提取到对白或旁白。如原剧本中有台词，请检查这条分镜是否遗漏。</div>
+@endif
+</div>
+<p class="hint">说话人、说话方式、人物动作及视线关系由 AI 自动处理；分镜提示词仍使用后台保存的原始对白。</p>
 <label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
@@ -227,8 +235,6 @@
 <span class="shot-selection-mode muted small">{{ ($shotSelections[(string)$shot->id]['mode']??'auto')==='manual'?'人工已调整':(($shotSelections[(string)$shot->id]['mode']??'auto')==='ai'?'AI 已识别':'初步匹配 · 可 AI 识别') }}</span>
 <button class="button outline" type="button" onclick="recognizeShotAssets({{ $shot->id }},{{ $project->id }},this)" @disabled($project->status==='generating')>AI 识别本镜资产</button>
 </div>
-<details class="shot-assets-details" @if($allAssets->count()<=8) open @endif>
-<summary>勾选需要提供的资产图（资产较多时可展开调整）</summary>
 <form class="shot-assets-form" data-shot-id="{{ $shot->id }}" data-save-url="{{ route('shot.assets.save',[$project->id,$shot->id]) }}" method="post">
 @csrf
 <div class="shot-reference-items">
@@ -245,7 +251,6 @@
 @endforelse
 </div>
 </form>
-</details>
 <div class="shot-reference-status small muted" role="status" aria-live="polite">本镜当前选用 {{ count($shotReferences[(string)$shot->id]??[]) }} 项；折叠资产不参与提示词生成。</div>
 </div>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
