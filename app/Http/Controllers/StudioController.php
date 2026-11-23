@@ -8,6 +8,7 @@ use App\Services\CreativeLibrary;
 use App\Services\FrameProfile;
 use App\Services\StoryboardTable;
 use App\Services\ProjectSnapshots;
+use App\Services\AssetReferencePicker;
 use App\Services\ScriptExpansionEngine;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
@@ -90,7 +91,10 @@ class StudioController
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
         $snapshots=ProjectSnapshots::list($id);
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets','snapshots'));
+        $shotReferences=[];
+        foreach($shots as $shot)
+            $shotReferences[(string)$shot->id]=AssetReferencePicker::fromAssets($allAssets,$shot);
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets','snapshots','shotReferences'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -579,10 +583,14 @@ class StudioController
             'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
         ]);
         DB::table('shots')->where('id',$shot)->update($v+['updated_at'=>now()]);
-        if($request->expectsJson())return response()->json([
-            'ok'=>true,'message'=>'镜头已保存',
-            'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
-        ]);
+        if($request->expectsJson()){
+            $saved=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
+            return response()->json([
+                'ok'=>true,'message'=>'镜头已保存',
+                'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
+                'references'=>AssetReferencePicker::list($project,$saved),
+            ]);
+        }
         return redirect()->to(route('project.show',$id).'#shot-'.$shot)->with('ok','镜头已保存');
     }
     public function prompt(int $id,int $shot,Request $request,PromptBuilder $builder) {

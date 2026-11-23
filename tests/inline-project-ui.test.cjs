@@ -10,6 +10,9 @@ for(const marker of [
   'data-inline-save="segments"', 'data-inline-save="shot"',
   'async function toggleAssetFold(form)', 'async function sendInlineForm(form)',
   'function updateAssetPreview(id,result)',
+  'function updateShotReferenceList(shotId,references)',
+  'function updateProjectShotReferences(map)',
+  'updateProjectShotReferences(result.shot_references)',
 ]) assert(view.includes(marker),'Missing inline UI hook: '+marker);
 assert(!view.includes('已移除资产（'),'Assets must fold in their original position');
 assert(!view.includes('移除资产（可恢复）'),'No old separate archive flow');
@@ -17,8 +20,9 @@ assert(!view.includes('window.location.reload('),'Asset/image saves must not rel
 assert(!view.includes('confirm(\'将此资产'),'Folding must not ask for confirmation');
 assert(view.includes('data-archived="{{ $a->is_archived'), 'Persisted folds must render correctly');
 for(const marker of [
-  "request()->expectsJson()", "['asset_id'=>$asset,'archived'=>true]",
-  "['asset_id'=>$asset,'archived'=>false]", "'thumbnail_url'=>route(",
+  "request()->expectsJson()", "'archived'=>true",
+  "'archived'=>false", "'shot_references'=>AssetReferencePicker::forProject($id)",
+  "'thumbnail_url'=>route(",
 ]) assert(controller.includes(marker),'Missing inline JSON output: '+marker);
 
 let script=view.split('<script>').at(-1).split('</script>')[0];

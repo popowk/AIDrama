@@ -220,6 +220,16 @@
 <div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="conversation" @selected($shot->delivery==='conversation')>人物之间对话（看向对方）</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
+<div class="shot-reference-list" id="shot-reference-{{ $shot->id }}" aria-live="polite">
+<strong class="small">本镜参考资产图</strong>
+<div class="shot-reference-items">
+@forelse(($shotReferences[(string)$shot->id]??[]) as $reference)
+<span class="shot-reference-item">请提供「{{ $reference['name'] }}」图片 · {{ $reference['required']?'必需':'可选' }}</span>
+@empty
+<span class="muted small">本镜暂无匹配的参考资产，已折叠或无关资产不会列出。</span>
+@endforelse
+</div>
+</div>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
 <textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly placeholder="点击「生成适配提示词」查看结果..."></textarea>
 </article>
@@ -570,6 +580,34 @@ async function sendInlineForm(form){
   return result;
 }
 
+function updateShotReferenceList(shotId,references){
+  const root=document.getElementById('shot-reference-'+String(shotId));
+  const items=root?.querySelector('.shot-reference-items');
+  if(!items)return;
+  const nodes=[];
+  if(Array.isArray(references)){
+    for(const ref of references){
+      if(!ref||typeof ref.name!=='string')continue;
+      const element=document.createElement('span');
+      element.className='shot-reference-item';
+      element.textContent='请提供「'+ref.name+'」图片 · '+(ref.required?'必需':'可选');
+      nodes.push(element);
+    }
+  }
+  if(nodes.length===0){
+    const empty=document.createElement('span');
+    empty.className='muted small';
+    empty.textContent='本镜暂无匹配的参考资产，已折叠或无关资产不会列出。';
+    nodes.push(empty);
+  }
+  items.replaceChildren(...nodes);
+}
+function updateProjectShotReferences(map){
+  if(!map||typeof map!=='object'||Array.isArray(map))return;
+  for(const [shotId,references] of Object.entries(map))
+    updateShotReferenceList(shotId,references);
+}
+
 function syncAssetTotals(){
   const active=document.querySelectorAll('.asset-fold-card:not(.is-archived)').length;
   const total=document.getElementById('asset-active-count');
@@ -613,6 +651,7 @@ async function toggleAssetFold(form){
     // Previously adapted prompts may still mention assets now folded.
     // Clear them and require a fresh model-generated prompt on next click.
     document.querySelectorAll('.prompt-output').forEach(area=>area.value='');
+    updateProjectShotReferences(result.shot_references);
     syncAssetTotals();
   }catch(error){
     if(note){note.textContent='操作失败：'+(error.message||String(error));note.classList.add('is-error');}
@@ -765,6 +804,7 @@ document.addEventListener('submit',async event=>{
       if(duration)duration.textContent=String(result.duration_seconds??'')+' 秒';
       const prompt=card.querySelector('.prompt-output');
       if(prompt)prompt.value='';
+      if(result.references)updateShotReferenceList(card.id.replace('shot-',''),result.references);
     }
     if(ratioField)showRatioNotice(form,'✓','success');
     else inlineSaveMessage(form,result.message||'保存成功',false);

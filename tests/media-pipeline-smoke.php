@@ -41,7 +41,7 @@ $brand=DB::table('assets')->insertGetId([
 ]);
 $shotId=DB::table('shots')->insertGetId([
     'project_id'=>$id,'sequence'=>1,'title'=>'开场',
-    'visual'=>'主持人举手介绍','dialogue'=>'监控小助手来啦',
+    'visual'=>'主持人举手介绍中维世纪K3C摄像头','dialogue'=>'监控小助手来啦',
     'action_before'=>'先站稳','on_screen_text'=>'4G监控',
     'delivery'=>'on_camera','duration_seconds'=>8,
     'created_at'=>now(),'updated_at'=>now(),

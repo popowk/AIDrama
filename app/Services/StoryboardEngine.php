@@ -54,17 +54,18 @@ class StoryboardEngine
         $profileRule=$short
             ?"【短视频默认模式】尽可能缩短总时长并加快节奏；同一个场景内相邻的动作、眼神、表情和台词可合并为一个镜头，不因单独表情或轻微动作切镜。人物可以一边做动作一边说话；除非必须先完成动作才可以说话，否则 action_before 留空并把同步动作写进 visual。估时真实紧凑，只在空间或人物调度不连续时切镜。每镜可有两个角色轮流说话，dialogue 按“悟空：...\\n八戒：...”多行形式保留发言顺序。每镜返回同一场景的 scene 字段供合并判断；禁止生成字幕。"
             :"【正常故事片模式】保持原有完整叙事、情绪铺垫、画面调度和镜头拆分方式，不强行压缩和合并；允许镜头表达表情和先后动作。";
-        $prompt="请按剧本输出分镜、画面文案及人物、场景、道具清单。\n".$profileRule."\n"."请按完整剧本输出分镜、画面文案及人物、场景、道具清单。\n".
+        $prompt="请按剧本输出分镜、人物、场景和道具清单。\n".$profileRule."\n".
           "风格：{$style}；画幅：".FrameProfile::label($this->frameRatio).
           "，".FrameProfile::prompt($this->frameRatio)."；每镜最长：{$limit}秒；创作类型偏好：{$mode}（auto 为模型识别）。\n".
           "script_mode 只能 talking 或 mixed：talking 表示主要对镜头讲话的纯口播；mixed 表示画面文案、情节/产品展示配合口播或画外音。\n".
           "镜头字段：title, visual, dialogue, action_before, estimated_seconds, on_screen_text, delivery。".
           "delivery 必须逐镜根据角色说话对象选择：conversation=人物之间自然对话（看向彼此、边做动作边说话），on_camera=人物面对镜头向观众口播，voiceover=画外音/旁白，none=无台词。不要把角色互相交流误标为 on_camera。on_screen_text 是可选画面文案，短视频不要字幕。\n".
+          "短视频分镜除了 scene，还要给出 camera_setup（机位/景别，如中景或特写）、characters（镜头中实际出现的角色数组）、time_anchor（时间段，如白天/夜晚）、cut_required（必须切镜的布尔值）。相同场景但镜头景别不同、人物缺乏连续位置、时间发生跳跃、动作需要专门切镜时 cut_required=true。不要为了合并而捏造连续性。\n".
           "镜头可选字段 scene：连续地点布景的固定名称；同场景多个镜头使用完全一致的 scene。对白允许多个说话人，dialogue 同一字段逐行标注‘人物：台词’，不得更改顺序。\n".
           "角色、场景和道具字段：type (character|scene|prop), name, description, voice_description, source_kind (upload|generate)。".
           "Logo、品牌标识、真实产品和具体型号/包装等 source_kind 必须是 upload，并独立列入资产；其他可生成的人物、非品牌场景与道具为 generate。\n".
           "仅输出 JSON：".
-          '{"script_mode":"talking|mixed","shots":[{"title":"镜头","scene":"场景名","visual":"画面动作","dialogue":"悟空：台词\\n八戒：台词","action_before":"必须先做的动作或空","on_screen_text":"画面文案或空","delivery":"on_camera|conversation|voiceover|none","estimated_seconds":8}],'.
+          '{"script_mode":"talking|mixed","shots":[{"title":"镜头","scene":"场景名","camera_setup":"中景","characters":["悟空","八戒"],"time_anchor":"白天","cut_required":false,"visual":"画面动作","dialogue":"悟空：台词\\n八戒：台词","action_before":"必须先做的动作或空","on_screen_text":"画面文案或空","delivery":"on_camera|conversation|voiceover|none","estimated_seconds":8}],'.
           '"assets":[{"type":"character|scene|prop","name":"名称","description":"外观","voice_description":"人物声音","source_kind":"upload|generate"}]}'.
           "\n台词和动作按发生顺序，禁止添加剧本中未出现的角色，不要遗漏原稿。\n剧本：\n".$script;
         $res=Http::withToken($apiKey)->acceptJson()->asJson()
@@ -97,8 +98,15 @@ class StoryboardEngine
                 !preg_match('/画面文案|字幕展示|旁白|画外音|B-roll/u',$script)
                 ?'talking':'mixed';
         $shots=$this->splitShots($data['shots'],$style,$limit,$detected);
-        if($short)$shots=$this->compactShots($shots,$limit);
-        foreach($shots as &$shot)unset($shot['scene_key']);
+        if($short){
+            $shots=$this->compactShots($shots,$limit);
+            foreach($shots as &$shot)$shot['prompt']=$this->shortShotPrompt($shot,$style);
+            unset($shot);
+        }
+        foreach($shots as &$shot){
+            foreach(['scene_key','camera_key','time_key','characters','cut_required'] as $temp)
+                unset($shot[$temp]);
+        }
         unset($shot);
         return ['shots'=>$shots,
             'assets'=>$this->normalizeAssets($data['assets']??[], $style),
@@ -140,6 +148,10 @@ class StoryboardEngine
                 $shotTitle=$title.(count($parts)>1?' · '.($i+1).'/'.count($parts):'');
                 $result[]=[
                     'title'=>$shotTitle,'scene_key'=>$scene,
+                    'camera_key'=>mb_substr(trim((string)($item['camera_setup']??'')),0,90),
+                    'time_key'=>mb_substr(trim((string)($item['time_anchor']??'')),0,90),
+                    'characters'=>$item['characters']??[],
+                    'cut_required'=>filter_var($item['cut_required']??false,FILTER_VALIDATE_BOOLEAN),
                     'visual'=>$visual.($i>0?'（承接上一镜头，人物位置和动作保持连续）':''),
                     'dialogue'=>$part,'action_before'=>$partPre,
                     'on_screen_text'=>$onScreen,'delivery'=>$delivery,
@@ -160,34 +172,40 @@ class StoryboardEngine
     }
 
     /**
-     * Merge adjacent short-video beats only when the model explicitly tags
-     * the same continuous scene and the combined duration fits the limit.
+     * Merge only continuous scene beats with compatible camera, roles, time
+     * and speaking mode; one second of shot-change overhead can be removed
+     * when a genuine same-take continuation exists.
      */
     private function compactShots(array $shots,int $limit):array
     {
         $combined=[];
         foreach($shots as $shot){
             $last=count($combined)-1;
-            if($last>=0){
-                $prev=$combined[$last];
-                $scene=trim((string)($shot['scene_key']??''));
-                $compatible=$scene!==''&&$scene===(string)($prev['scene_key']??'')
-                    &&($prev['delivery']??'')===($shot['delivery']??'')
-                    &&$prev['duration_seconds']+$shot['duration_seconds']<=$limit;
-                if($compatible){
-                    $combined[$last]['title']=mb_substr($prev['title'].'＋'.$shot['title'],0,190);
-                    $combined[$last]['visual']=$prev['visual']."\n同镜连续完成：".$shot['visual'];
-                    $combined[$last]['dialogue']=trim($prev['dialogue']."\n".$shot['dialogue']);
-                    $combined[$last]['action_before']=trim($prev['action_before']."\n".$shot['action_before']);
-                    $combined[$last]['duration_seconds']=$prev['duration_seconds']+$shot['duration_seconds'];
-                    $combined[$last]['on_screen_text']='';
-                    $combined[$last]['prompt']=trim($prev['prompt']."\n连续动作：".$shot['prompt']);
-                    continue;
-                }
+            if($last>=0 && ShotContinuity::canMerge($combined[$last],$shot,$limit)){
+                $combined[$last]=ShotContinuity::merge($combined[$last],$shot);
+                continue;
             }
             $combined[]=$shot;
         }
         return $combined;
+    }
+
+    private function shortShotPrompt(array $shot,string $style):string
+    {
+        $parts=[
+            '项目画风：'.$style,
+            '画幅：'.FrameProfile::prompt($this->frameRatio),
+            '镜头：'.$shot['title'],
+            '画面与连续动作：'.$shot['visual'],
+        ];
+        if(trim((string)($shot['action_before']??''))!=='')
+            $parts[]='必须在开口之前完成的动作：'.$shot['action_before'];
+        if(trim((string)($shot['dialogue']??''))!=='')
+            $parts[]='人物台词（按原顺序）：'.$shot['dialogue'];
+        $parts[]='声音呈现：'.ShotDelivery::label((string)$shot['delivery']);
+        $parts[]='目标时长：'.$shot['duration_seconds'].'秒。';
+        $parts[]='同镜头可以一边做动作一边说话；保持角色和道具位置连续，不另加转场、字幕或画面文字。';
+        return implode("\n",$parts);
     }
 
     private function splitDialogue(string $text,int $maxChars):array
