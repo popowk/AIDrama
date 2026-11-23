@@ -216,8 +216,8 @@
 <article class="shot-card" id="shot-{{ $shot->id }}"><div class="shot-head"><span class="num">{{ str_pad($shot->sequence,2,'0',STR_PAD_LEFT) }}</span><strong>{{ $shot->title }}</strong><span class="chip">{{ $shot->duration_seconds }} 秒</span></div>
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
-<label>画面与动作（含台词）<textarea rows="6" name="shot_content" maxlength="45000" required placeholder="镜头画面及人物动作；有台词时在同一框内以【台词 / 旁白】分隔">{{ \App\Services\ShotText::format($shot) }}</textarea></label>
-<p class="hint">画面、动作和人物台词都在上方同一框中。AI 生成的台词会自动显示；你也可以直接修改并保存。</p>
+<label>画面与动作（含台词）<textarea rows="6" name="shot_content" maxlength="45000" required placeholder="镜头画面、人物动作及说话内容写在同一个框内，不重复添加台词">{{ \App\Services\ShotText::format($shot) }}</textarea></label>
+<p class="hint">画面、动作和人物台词都在上方同一框中。画面已包含的台词不会在下方重复添加，可直接修改保存。</p>
 <label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>

@@ -635,10 +635,10 @@ class StudioController
                 'on_screen_text'=>'nullable|string|max:5000',
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
             ]);
-            $parts=ShotText::parse($v['shot_content']);
+            $original=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
+            $parts=ShotText::parse($v['shot_content'],$original);
             $this->validateShotText($parts);
             unset($v['shot_content']);
-            $original=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
             $v=array_merge($v,$parts);
             $v['delivery']=$this->updatedShotDelivery($original,$parts);
         }else{
@@ -695,7 +695,7 @@ class StudioController
                 'shot_content'=>'required|string|max:45000',
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
             ]);
-            $parts=ShotText::parse($edited['shot_content']);
+            $parts=ShotText::parse($edited['shot_content'],$item);
             $this->validateShotText($parts);
             $item=clone $item;
             $item->title=$edited['title'];
@@ -738,7 +738,7 @@ class StudioController
                 'shot_content'=>'required|string|max:45000',
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
             ]);
-            $parts=ShotText::parse($editing['shot_content']);
+            $parts=ShotText::parse($editing['shot_content'],$item);
             $this->validateShotText($parts);
             $item=clone $item;
             $item->title=$editing['title'];
