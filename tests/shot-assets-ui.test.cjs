@@ -13,10 +13,28 @@ assert(!shot.includes('name="dialogue"'),'No redundant dialogue input');
 assert(!shot.includes('name="delivery"'),'No redundant voice-mode selector');
 assert(shot.includes('name="visual"')&&shot.includes('name="duration_seconds"'),
     'Keep core shot visual and duration editing');
+assert(shot.includes('class="shot-dialogue-content"')&&
+    shot.includes('{{ $shot->dialogue }}')&&
+    shot.includes('white-space')===false,
+    'Render saved AI dialogue as visible text without new edit controls');
+assert(shot.includes('本镜 AI 未提取到对白或旁白'),
+    'Distinguish legitimately silent shots from AI extraction omissions');
+assert(css.includes('.shot-dialogue-content{white-space:pre-wrap'),
+    'Preserve speaker line breaks in visible conversation transcript');
 assert(view.includes('class="shot-assets-form"') &&
   view.includes('type="checkbox" name="asset_ids[]"') &&
   view.includes('onclick="recognizeShotAssets('),
   'All shot assets render as manual multi-select with AI re-identification');
+const referenceStart=view.indexOf('class="shot-reference-list"');
+const referenceEnd=view.indexOf('class="prompt-row"',referenceStart);
+assert(referenceStart>=0&&referenceEnd>referenceStart,
+    'Shot asset panel should precede the prompt generator');
+const reference=view.slice(referenceStart,referenceEnd);
+assert(reference.includes('<form class="shot-assets-form"') &&
+    !reference.includes('<details') && !reference.includes('<summary'),
+    'Reference asset checkboxes remain visible for any project asset count');
+assert(!view.includes('class="shot-assets-details"'),
+    'Old conditional-collapsed asset list has been removed');
 assert(view.includes('form.dataset.saveUrl') &&
   view.includes('body:JSON.stringify({asset_ids:ids})'),
   'Checkbox changes autosave explicit empty as JSON array');
