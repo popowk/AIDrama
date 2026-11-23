@@ -175,3 +175,16 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .asset-ratio-indicator.is-visible{opacity:1}
 .asset-ratio-indicator.is-error{color:#ffb4bd;position:static;display:block;white-space:normal;line-height:1.35;padding-top:5px}
 @media(max-width:540px){.asset-preview-controls{gap:8px}.asset-preview-controls .asset-ratio-form select{font-size:11px}.asset-preview-controls .asset-generate{font-size:11px}}
+
+/* Durable generation history: intentionally compact, separate from asset cards. */
+.project-history{margin-top:16px;scroll-margin-top:90px}
+.project-history details>summary{cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:700}
+.project-history details>summary .chip{font-weight:500}
+.history-rows{margin-top:12px;display:flex;flex-direction:column;gap:0}
+.history-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+.history-meta{display:flex;flex-direction:column;gap:5px;min-width:0}
+.history-meta small{line-height:1.5;overflow-wrap:anywhere}
+.history-row form{flex-shrink:0}
+.history-row button{white-space:normal;font-size:12px;padding:9px 12px}
+#generation-state button{margin-top:10px}
+@media(max-width:560px){.history-row{flex-direction:column;align-items:flex-start}.history-row form{width:100%}}

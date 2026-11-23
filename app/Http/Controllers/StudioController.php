@@ -7,6 +7,7 @@ use App\Services\PromptPresets;
 use App\Services\CreativeLibrary;
 use App\Services\FrameProfile;
 use App\Services\StoryboardTable;
+use App\Services\ProjectSnapshots;
 use App\Services\ScriptExpansionEngine;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
@@ -88,7 +89,8 @@ class StudioController
         $creativeSkills=CreativeLibrary::skills();
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets'));
+        $snapshots=ProjectSnapshots::list($id);
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets','snapshots'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -150,7 +152,13 @@ class StudioController
         $v['style']=$style;
         $v['style_preset']=$preset;
         $previousMax=DB::table('shots')->where('project_id',$id)->max('duration_seconds')??0;
-        if ($previousMax>(int)$v['shot_limit']) return back()->withErrors(['shot_limit'=>'现有镜头超过选择的时长上限，请重新生成分镜。']);
+        if ($previousMax>(int)$v['shot_limit']) {
+            $message='现有镜头超过选择的时长上限，请重新生成分镜。';
+            if($request->expectsJson())return response()->json([
+                'message'=>$message,'errors'=>['shot_limit'=>[$message]]
+            ],422);
+            return back()->withErrors(['shot_limit'=>$message]);
+        }
         if(isset($v['skills_present']))
             $v['creative_skills']=json_encode(CreativeLibrary::skillIds($v['skill_keys']??[]));
         unset($v['skills_present'],$v['skill_keys']);
@@ -308,6 +316,7 @@ class StudioController
             'kind'=>$job?->kind??'shots',
             'attempts'=>$job?->attempts??0,
             'error'=>$job?->status==='failed'?$job->error_message:null,
+            'can_retry'=>$job?->status==='failed',
             'created_at'=>$job?->created_at,
             'started_at'=>$job?->started_at,
             'finished_at'=>$job?->finished_at,
@@ -366,6 +375,10 @@ class StudioController
                 $current=DB::table('generation_jobs')->where('id',$job->id)->lockForUpdate()->first();
                 if(!$current || $current->status!=='running')
                     throw new RuntimeException('此生成任务已过期，结果不会覆盖当前分镜。');
+                // A committed database snapshot is created in the SAME
+                // transaction before replacing existing rows. Any failure
+                // rolls back both the new rows and the snapshot.
+                ProjectSnapshots::capture($id,'before_regeneration',$job->id);
                 $previous=DB::table('assets')->where('project_id',$id)->get()
                     ->keyBy(static fn($a)=>$a->type.'|'.$a->name);
                 DB::table('shots')->where('project_id',$id)->delete();
@@ -461,8 +474,91 @@ class StudioController
             return response()->json(['status'=>'failed','error'=>$safe]);
         }
     }
+    /** Retry the SAME saved request parameters, not newly edited text. */
+    public function retryGeneration(Request $request,int $id)
+    {
+        try {
+            $result=DB::transaction(function()use($id){
+                $project=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
+                if(!$project)abort(404);
+                $last=DB::table('generation_jobs')->where('project_id',$id)
+                    ->orderByDesc('id')->lockForUpdate()->first();
+                if(!$last)throw new RuntimeException('没有可以重试的生成任务');
+                if($last->status==='running'&&$last->started_at&&
+                    \Illuminate\Support\Carbon::parse($last->started_at)
+                        ->isBefore(now()->subMinutes(8))){
+                    DB::table('generation_jobs')->where('id',$last->id)
+                        ->where('status','running')->update([
+                            'status'=>'failed','finished_at'=>now(),
+                            'error_message'=>'上一任务超时，需要手动重试。',
+                            'updated_at'=>now(),
+                        ]);
+                    $last->status='failed';
+                }
+                if($last->status==='queued')
+                    return ['ok'=>true,'status'=>'queued','message'=>'任务仍在等待执行，已继续使用原任务'];
+                if($last->status!=='failed')
+                    throw new RuntimeException('当前任务尚未失败，无需重新提交。请查看任务状态。');
+                $other=DB::table('generation_jobs')->where('project_id',$id)
+                    ->where('id','!=',$last->id)
+                    ->whereIn('status',['queued','running'])->exists();
+                if($other)throw new RuntimeException('此项目仍有其他生成任务在执行，请完成后再重试');
+                $payload=[
+                    'project_id'=>$id,'status'=>'queued',
+                    'kind'=>$last->kind??'shots','attempts'=>0,
+                    'error_message'=>null,'created_at'=>now(),'updated_at'=>now(),
+                ];
+                foreach((array)$last as $field=>$value)
+                    if(str_starts_with($field,'request_'))$payload[$field]=$value;
+                $newId=DB::table('generation_jobs')->insertGetId($payload);
+                DB::table('projects')->where('id',$id)->update([
+                    'status'=>'generating','updated_at'=>now(),
+                ]);
+                return [
+                    'ok'=>true,'status'=>'queued','job_id'=>$newId,
+                    'message'=>'已使用上一次任务的剧本和参数重新排队，不会覆盖已有分镜',
+                ];
+            });
+            if($request->expectsJson())return response()->json($result);
+            return redirect()->to(route('project.show',$id).'#generation-state')
+                ->with('ok',$result['message']);
+        }catch(RuntimeException $e){
+            if($request->expectsJson())return response()->json([
+                'ok'=>false,'message'=>$e->getMessage()
+            ],409);
+            return redirect()->to(route('project.show',$id).'#generation-state')
+                ->withErrors(['generation'=>$e->getMessage()]);
+        }
+    }
+
+    public function restoreSnapshot(Request $request,int $id,int $snapshot)
+    {
+        try {
+            $result=ProjectSnapshots::restore($id,$snapshot);
+            $message='历史版本恢复成功：'.$result['shots'].' 个镜头、'.$result['assets'].' 个资产。';
+            if($result['missing_images']>0)
+                $message.='有 '.$result['missing_images'].' 张历史图片文件不在存储中，请重新上传。';
+            if($request->expectsJson())
+                return response()->json(['ok'=>true,'message'=>$message]+$result);
+            return redirect()->to(route('project.show',$id).'#generation-history')
+                ->with('ok',$message);
+        }catch(RuntimeException $e){
+            if($request->expectsJson())return response()->json([
+                'ok'=>false,'message'=>$e->getMessage()
+            ],409);
+            return redirect()->to(route('project.show',$id).'#generation-history')
+                ->withErrors(['snapshot'=>$e->getMessage()]);
+        }
+    }
+
     public function saveShot(Request $request,int $id,int $shot) {
         $project=$this->project($id);
+        if($project->status==='generating') {
+            $message='正在生成新的分镜，请完成后再保存，以免修改被覆盖。';
+            if($request->expectsJson())return response()->json(['message'=>$message],409);
+            return redirect()->to(route('project.show',$id).'#shot-'.$shot)
+                ->withErrors(['shot'=>$message]);
+        }
         if (!DB::table('shots')->where('id',$shot)->where('project_id',$id)->exists()) abort(404);
         $v=$request->validate([
             'title'=>'required|string|max:191','visual'=>'required|string|max:20000',

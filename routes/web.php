@@ -39,6 +39,10 @@ Route::middleware(RequireAdmin::class)->group(function() {
     Route::post('/projects/{id}/expand-storyboard',[StudioController::class,'expandStoryboard'])->whereNumber('id')->name('project.expand');
     Route::post('/projects/{id}/script-segments',[StudioController::class,'saveSegments'])->whereNumber('id')->name('project.segments.save');
     Route::get('/projects/{id}/generation/status',[StudioController::class,'generationStatus'])->whereNumber('id')->name('generation.status');
+    Route::post('/projects/{id}/generation/retry',[StudioController::class,'retryGeneration'])
+        ->middleware('throttle:6,1')->whereNumber('id')->name('generation.retry');
+    Route::post('/projects/{id}/snapshots/{snapshot}/restore',[StudioController::class,'restoreSnapshot'])
+        ->middleware('throttle:4,1')->whereNumber('id')->whereNumber('snapshot')->name('project.snapshot.restore');
     Route::post('/projects/{id}/generation/run',[StudioController::class,'runGeneration'])->middleware('throttle:10,1')->whereNumber('id')->name('generation.run');
     Route::post('/projects/{id}/shots/{shot}',[StudioController::class,'saveShot'])->whereNumber('id')->whereNumber('shot')->name('shot.save');
     Route::post('/projects/{id}/shots/{shot}/prompt',[StudioController::class,'prompt'])->middleware('throttle:12,1')->whereNumber('id')->whereNumber('shot')->name('shot.prompt');
