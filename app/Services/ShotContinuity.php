@@ -20,6 +20,14 @@ final class ShotContinuity
         $a=(int)($previous['duration_seconds']??0);
         $b=(int)($current['duration_seconds']??0);
         if($a<=0||$b<=0||$a+$b>$limit)return false;
+        // A model may under-estimate a long speaking segment; do not merge
+        // unless all utterances fit the target limit at 3.5 chars/second.
+        $dialogue=trim((string)($previous['dialogue']??'')."\n".(string)($current['dialogue']??''));
+        $spoken=preg_replace('/(^|\R)\s*[^：:\r\n]{1,25}[：:]\s*/u','$1',$dialogue);
+        $spoken=preg_replace('/[\s，。！？!?、；：:“”"‘’]/u','',(string)$spoken);
+        $minSeconds=(int)ceil(mb_strlen((string)$spoken)/3.5);
+        if($minSeconds+(trim((string)($previous['action_before']??''))!==''?2:0)>$limit)
+            return false;
 
         if(!empty($previous['cut_required'])||!empty($current['cut_required']))return false;
         if(trim((string)($current['action_before']??''))!=='')return false;
