@@ -49,7 +49,7 @@ class StoryboardEngine
         $skills=PromptPresets::active('script')."\n".
             CreativeLibrary::stylePrompt($this->stylePreset)."\n".
             CreativeLibrary::skillPrompt($this->creativeSkills,'script')."\n".
-            "【不可省略的系统要求】分镜页不显示独立的台词/开口前动作/声音形式编辑框，但必须在每个镜头的 JSON 中继续完整输出 dialogue、action_before、delivery。原剧本中出现的说话、人物之间的问答、对镜头口播、画外音均不得遗漏。对白必须保留人物名、原话、发言顺序与停顿，禁止统一改成旁白；画面 visual 要交代谁看向谁、边做什么动作边说话。短视频不生成字幕；背景音乐默认不生成。这个规则优先于其他旧模板或自定义提示词。";
+            "【不可省略的系统要求】分镜页不显示独立的台词/开口前动作/声音形式编辑框，但必须在每个镜头的 JSON 中继续完整输出 dialogue、action_before、delivery。原剧本中出现的说话、人物之间的问答、对镜头口播、画外音均不得遗漏。对白必须保留人物名、原话、发言顺序与停顿，禁止统一改成旁白；画面 visual 要交代谁看向谁、边做什么动作边说话。注意区分“监控画面：”“画面内容：”等说明字段与真正说话人，不能把每个冒号前的文字当人名。短视频不生成字幕；背景音乐默认不生成。这个规则优先于其他旧模板或自定义提示词。";
         $mode=$this->preferredMode;
         $short=$this->videoMode==='short';
         $profileRule=$short
@@ -61,6 +61,7 @@ class StoryboardEngine
           "script_mode 只能 talking 或 mixed：talking 表示主要对镜头讲话的纯口播；mixed 表示画面文案、情节/产品展示配合口播或画外音。\n".
           "镜头字段（全部必需）：title, visual, dialogue, action_before, estimated_seconds, on_screen_text, delivery, asset_names。注意：页面隐藏对白/声音输入框只是简化交互，绝不是要省略声音内容。".
           "逐镜声音/台词要求：如原稿有人说话，dialogue 必须写入原句，格式为“人物名：说的内容”，多人按时间顺序用换行分隔；不能把原对白只写在 visual 而留空 dialogue。无人物说话但有讲解，使用 voiceover 并在 dialogue 记录“旁白：原话”。没有任何台词才能用 none 并将 dialogue 置空。delivery 必须逐镜根据说话对象选择：conversation=人物之间自然对话（彼此对视），on_camera=人物面对镜头向观众口播，voiceover=画外音/旁白，none=确实无人说话。角色可以边动作边说话，动作不必单独分镜；visual 必须说明谁说话、看谁、做什么动作；只有必须先完成的动作才写入 action_before，其他填空字符串。禁止把人物互相交流误标为 on_camera。\n".
+          "【冒号字段不是说话人】原稿的“监控画面：”“画面呈现：”“画面内容：”“镜头画面：”“动作描述：”“产品展示：”“屏幕内容：”“环境音效：”“拍摄提示：”等均是画面、声音或拍摄说明，不是角色姓名。这些字段的内容要归入 visual、场景或动作，不要硬塞到 dialogue。不要仅凭冒号（：或 :）就判断前面的词是说话人；先根据上下文区分人物对话和栏目说明。\n".
           "短视频 on_screen_text 必须为空字符串，不得生成字幕或叠加文字；背景音乐默认不生成。正常故事片保留原有叙事节奏。\n".
           "短视频分镜除了 scene，还要给出 camera_setup（机位/景别，如中景或特写）、characters（镜头中实际出现的角色数组）、time_anchor（时间段，如白天/夜晚）、cut_required（必须切镜的布尔值）。相同场景但镜头景别不同、人物缺乏连续位置、时间发生跳跃、动作需要专门切镜时 cut_required=true。不要为了合并而捏造连续性。\n".
           "镜头字段 asset_names：引用本次返回的 assets 数组中的名称列表；按 AI 判断列出本镜实际出镜的人物、场景和道具，不因同品牌就加入没出镜的包装或 Logo；可以是空数组。\n".
@@ -95,7 +96,6 @@ class StoryboardEngine
         if (!is_array($data) || empty($data['shots']) || !is_array($data['shots'])) {
             throw new RuntimeException('AI 返回的 JSON 缺少 shots 分镜数组');
         }
-        $this->validateSpokenDialogue($script,$data['shots']);
         $detected=$mode!=='auto'?$mode:(string)($data['script_mode']??'');
         if(!in_array($detected,['talking','mixed'],true))
             $detected=preg_match('/纯口播|面对镜头|口播稿|对镜头讲话/u',$script)&&
@@ -115,48 +115,6 @@ class StoryboardEngine
         return ['shots'=>$shots,
             'assets'=>$this->normalizeAssets($data['assets']??[], $style),
             'script_mode'=>$detected];
-    }
-
-    /** Prevent a model from silently returning a silent film when the source
-     * clearly includes speaker-prefixed dialogue. The user should retry the
-     * model call rather than losing their original spoken lines.
-     */
-    private function validateSpokenDialogue(string $script,array $shots):void
-    {
-        // Only a *short speaker label* at the beginning of a line is
-        // unambiguous dialogue. Longer prefixes such as
-        // "悟空一把拽住师父：..." are scene directions, NOT speaker IDs.
-        // Do not reject an expensive model result based on such directions.
-        preg_match_all('/(?:^|\R)\s*(?:[-*]\s*)?(?:[“「]?)([\p{Han}]{1,4}|[A-Za-z][A-Za-z0-9_]{0,17})(?:[”」]?)\s*[：:]\s*([^\r\n]+)/u',
-            $script,$matches,PREG_SET_ORDER);
-        if(!$matches)return;
-        $meta=['镜头','场景','动作','画面','描述','时长','时间','风格','地点',
-            '字幕','台词','对白','口播','备注','环境','提示词','道具','人物',
-            '角色','产品','音乐','参考','色彩','镜号','镜头描述'];
-        $expected=[];
-        foreach($matches as $match){
-            $speaker=trim($match[1]);$speech=trim($match[2]);
-            // Storyboard numbers, common headers and action verbs are not
-            // people addressing another character. Keep this fail-closed
-            // detector narrow; ambiguous prose is judged by the model.
-            if(in_array($speaker,$meta,true)||
-                preg_match('/^(?:(?:s|sc|shot|p)\\d+|(?:镜头|画面|场次|分镜|段落)\\d+)$/iu',$speaker)||
-                preg_match('/(?:一把|拽|拉住|转身|回头|上前|伸手|走到|看向|突然|急忙|抬手|拍了|指着)/u',$speaker)||
-                mb_strlen($speech)<2)continue;
-            $expected[$speaker]=true;
-        }
-        if(!$expected)return;
-        $actual='';
-        foreach($shots as $shot){
-            if(is_array($shot))
-                $actual.="\n".trim((string)($shot['dialogue']??''));
-        }
-        if(trim($actual)==='')
-            throw new RuntimeException('原始剧本存在人物对白，但 AI 未生成任何口播/台词；已拒绝静音分镜结果，请重试。');
-        foreach(array_keys($expected) as $speaker){
-            if(!preg_match('/(?:^|\R)\s*'.preg_quote($speaker,'/').'\s*[：:]/u',$actual))
-                throw new RuntimeException('AI 分镜漏掉了「'.$speaker.'」的说话内容；已保留原剧本，请重试。');
-        }
     }
 
     private function splitShots(array $items, string $style, int $limit,string $mode): array
