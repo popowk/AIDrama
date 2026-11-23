@@ -21,7 +21,7 @@ assert(!view.includes('confirm(\'将此资产'),'Folding must not ask for confir
 assert(view.includes('data-archived="{{ $a->is_archived'), 'Persisted folds must render correctly');
 for(const marker of [
   "request()->expectsJson()", "'archived'=>true",
-  "'archived'=>false", "'shot_references'=>AssetReferencePicker::forProject($id)",
+  "'archived'=>false", "'shot_references'=>ShotAssetSelection::projectReferences($id)",
   "'thumbnail_url'=>route(",
 ]) assert(controller.includes(marker),'Missing inline JSON output: '+marker);
 
