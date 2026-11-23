@@ -180,6 +180,12 @@ class StudioController
     }
     public function generate(int $id) {
         $project=$this->project($id);
+        // Do not sever an in-flight paid image task's asset ID while replacing
+        // the shot/asset lists. Finish or resolve image jobs first.
+        if(DB::table('assets')->where('project_id',$id)
+            ->where('image_status','generating')->exists())
+            return redirect()->to(route('project.show',$id).'#assets-panel')
+                ->withErrors(['assets'=>'还有图片正在生成，请先完成或处理图片任务，再重新生成分镜与资产。']);
         if(trim((string)$project->script)==='' ||
             (($project->input_kind??'script')==='storyboard' && ($project->storyboard_dirty??false)))
             return redirect()->to(route('project.show',$id).'#script-editor')
@@ -187,6 +193,8 @@ class StudioController
         $created=DB::transaction(function() use($id) {
             $project=DB::table('projects')->where('id',$id)->lockForUpdate()->first();
             if (!$project) abort(404);
+            if(DB::table('assets')->where('project_id',$id)
+                ->where('image_status','generating')->exists())return 'image_busy';
             $running=DB::table('generation_jobs')->where('project_id',$id)
                 ->whereIn('status',['queued','running'])->orderByDesc('id')->first();
             if($running) {
@@ -212,6 +220,9 @@ class StudioController
             DB::table('projects')->where('id',$id)->update(['status'=>'generating','updated_at'=>now()]);
             return true;
         });
+        if($created==='image_busy')
+            return redirect()->to(route('project.show',$id).'#assets-panel')
+                ->withErrors(['assets'=>'图片任务仍在执行，已保留现有分镜和资产，请先等待图片完成。']);
         // Use a stable fragment to defeat browser scroll restoration to the
         // previous large asset preview after a POST/redirect/reload cycle.
         return redirect()->to(route('project.show',$id).'#generation-state')
