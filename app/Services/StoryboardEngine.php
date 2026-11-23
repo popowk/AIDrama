@@ -123,7 +123,11 @@ class StoryboardEngine
      */
     private function validateSpokenDialogue(string $script,array $shots):void
     {
-        preg_match_all('/(?:^|\R)\s*(?:[-*]\s*)?([\p{Han}A-Za-z][\p{Han}A-Za-z0-9]{0,11})\s*[：:]\s*([^\r\n]+)/u',
+        // Only a *short speaker label* at the beginning of a line is
+        // unambiguous dialogue. Longer prefixes such as
+        // "悟空一把拽住师父：..." are scene directions, NOT speaker IDs.
+        // Do not reject an expensive model result based on such directions.
+        preg_match_all('/(?:^|\R)\s*(?:[-*]\s*)?(?:[“「]?)([\p{Han}]{1,4}|[A-Za-z][A-Za-z0-9_]{0,17})(?:[”」]?)\s*[：:]\s*([^\r\n]+)/u',
             $script,$matches,PREG_SET_ORDER);
         if(!$matches)return;
         $meta=['镜头','场景','动作','画面','描述','时长','时间','风格','地点',
@@ -132,9 +136,12 @@ class StoryboardEngine
         $expected=[];
         foreach($matches as $match){
             $speaker=trim($match[1]);$speech=trim($match[2]);
-            // Storyboard IDs such as S01: or 镜头1: are metadata, not voices.
+            // Storyboard numbers, common headers and action verbs are not
+            // people addressing another character. Keep this fail-closed
+            // detector narrow; ambiguous prose is judged by the model.
             if(in_array($speaker,$meta,true)||
                 preg_match('/^(?:(?:s|sc|shot|p)\\d+|(?:镜头|画面|场次|分镜|段落)\\d+)$/iu',$speaker)||
+                preg_match('/(?:一把|拽|拉住|转身|回头|上前|伸手|走到|看向|突然|急忙|抬手|拍了|指着)/u',$speaker)||
                 mb_strlen($speech)<2)continue;
             $expected[$speaker]=true;
         }
