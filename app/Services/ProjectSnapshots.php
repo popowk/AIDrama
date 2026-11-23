@@ -24,10 +24,13 @@ final class ProjectSnapshots
         $assets=DB::table('assets')->where('project_id',$projectId)->orderBy('id')->get()
             ->map(static fn($row)=>(array)$row)->all();
         if(!$shots&&!$assets)return null; // no empty version for first creation
+        $links=DB::table('shot_asset_links')->whereIn('shot_id',array_column($shots,'id'))
+            ->get(['shot_id','asset_id'])->map(static fn($row)=>(array)$row)->all();
         $payload=json_encode([
-            'version'=>1,
+            'version'=>2,
             'shots'=>$shots,
             'assets'=>$assets,
+            'shot_asset_links'=>$links,
             'project_settings'=>[
                 'detected_mode'=>$project->detected_mode??null,
                 'shot_limit'=>$project->shot_limit,
@@ -77,8 +80,9 @@ final class ProjectSnapshots
             if(!$snapshot)throw new RuntimeException('该项目的历史版本不存在');
             try{$data=json_decode((string)$snapshot->payload,true,512,JSON_THROW_ON_ERROR);}
             catch(\JsonException $e){throw new RuntimeException('历史版本数据损坏，已保留现有分镜与资产');}
-            if(!is_array($data)||($data['version']??null)!==1||
+            if(!is_array($data)||!in_array($data['version']??null,[1,2],true)||
                 !is_array($data['shots']??null)||!is_array($data['assets']??null)||
+                (($data['version']??null)===2&&!is_array($data['shot_asset_links']??null))||
                 count($data['shots'])!==(int)$snapshot->shot_count||
                 count($data['assets'])!==(int)$snapshot->asset_count)
                 throw new RuntimeException('历史版本数据校验失败，已保留当前数据');
@@ -112,6 +116,23 @@ final class ProjectSnapshots
                     $asset['image_poll_after']=null;
                 }
                 DB::table('assets')->insert($asset);
+            }
+            // Old v1 snapshots have no asset mapping. Their shots retain the
+            // DB default auto-matching mode; newer v2 snapshots preserve
+            // user-selected links, including an explicitly empty selection.
+            if(($data['version']??null)===2){
+                $shotIds=array_fill_keys(array_map('intval',array_column($data['shots'],'id')),true);
+                $assetIds=array_fill_keys(array_map('intval',array_column($data['assets'],'id')),true);
+                foreach($data['shot_asset_links'] as $link){
+                    $sid=(int)($link['shot_id']??0);
+                    $aid=(int)($link['asset_id']??0);
+                    if(!isset($shotIds[$sid])||!isset($assetIds[$aid]))
+                        throw new RuntimeException('历史资产关联不完整，已取消恢复并保留现有版本');
+                    DB::table('shot_asset_links')->insert([
+                        'shot_id'=>$sid,'asset_id'=>$aid,
+                        'created_at'=>now(),'updated_at'=>now(),
+                    ]);
+                }
             }
             $settings=$data['project_settings']??[];
             $maxSeconds=0;
