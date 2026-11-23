@@ -45,7 +45,9 @@ try {
         $user=(string)($request['messages'][1]['content']??'');
         assertSpeech(str_contains($system,'dialogue') &&
             str_contains($system,'分镜页不显示独立的台词') &&
+            str_contains($system,'监控画面') &&
             str_contains($user,'逐镜声音/台词要求') &&
+            str_contains($user,'冒号字段不是说话人') &&
             str_contains($user,'人物名：说的内容'),
             'system and user prompt require speech even without editor controls');
         return Http::response(['choices'=>[['message'=>[
@@ -94,49 +96,48 @@ try {
         str_contains($builderPrompt,'开口前必须完成的动作：先摆好相机'),
         'adapted video brief must retain hidden speech, delivery and required preaction');
 
+    // A source line ending in ":" does not establish a speaker.
+    // A model's valid storyboard MUST NOT fail just because a heuristic
+    // interpreted a picture/camera/action label as a character's name.
     Http::swap(new \Illuminate\Http\Client\Factory());
     $silent=$shot;$silent['dialogue']='';$silent['delivery']='none';
-    Http::fake(['https://api.example.com/*'=>Http::response([
-        'choices'=>[['message'=>['content'=>json_encode([
-            'script_mode'=>'mixed','shots'=>[$silent],'assets'=>[],
-        ],JSON_UNESCAPED_UNICODE)]]],
-    ],200)]);
-    try{
-        $engine->generate($spokenSource,'3D国风动画',15);
-        throw new RuntimeException('Silent storyboard was incorrectly accepted');
-    }catch(RuntimeException $e){
-        assertSpeech(str_contains($e->getMessage(),'未生成任何口播/台词'),
-            'reject silent output when source explicitly contains spoken dialogue');
+    $sceneSources=[
+        "监控画面：此时画面切换到夜视模式。\n画面呈现：从室外看见大棚里的设备。",
+        "画面内容：黑光全彩实时监控。\n屏幕内容：设备正在检测人员。",
+        "视频画面：八戒站在棚边看远处。\n镜头画面：太阳能板安装在杆顶。",
+        "动作描述：悟空一把拽住师父。\n产品展示：摄像头旋转跟踪。",
+        "环境音效：山风吹动树叶。\n拍摄提示：镜头慢慢推近。",
+        "监控画面: 枪球联动实时录像。\n画面呈现: 路口车辆经过。",
+        "S01：大棚建立镜头\n镜头1：室外无人说话。",
+    ];
+    foreach($sceneSources as $sceneSource){
+        Http::fake(['https://api.example.com/*'=>Http::response([
+            'choices'=>[['message'=>['content'=>json_encode([
+                'script_mode'=>'mixed','shots'=>[$silent],'assets'=>[],
+            ],JSON_UNESCAPED_UNICODE)]]],
+        ],200)]);
+        $scene=$engine->generate($sceneSource,'3D国风动画',15);
+        assertSpeech(count($scene['shots'])===1 &&
+            $scene['shots'][0]['dialogue']==='' &&
+            $scene['shots'][0]['delivery']==='none',
+            'colon-prefixed visual, action, screen and sound fields must not be treated as speakers: '.$sceneSource);
     }
 
+    // Even explicitly labelled dialogue must not be rejected based on a
+    // brittle guess. Strong model instructions still request complete speech.
+    // The model output is kept so users do not pay again for a failed result.
     Http::swap(new \Illuminate\Http\Client\Factory());
-    $missingSecond=$shot;$missingSecond['dialogue']='悟空：二师兄，摄像头装好了。';
+    $missingSecond=$shot;
+    $missingSecond['dialogue']='悟空：二师兄，摄像头装好了。';
     Http::fake(['https://api.example.com/*'=>Http::response([
         'choices'=>[['message'=>['content'=>json_encode([
             'script_mode'=>'mixed','shots'=>[$missingSecond],'assets'=>[],
         ],JSON_UNESCAPED_UNICODE)]]],
     ],200)]);
-    try{
-        $engine->generate($spokenSource,'3D国风动画',15);
-        throw new RuntimeException('Missing second speaker was incorrectly accepted');
-    }catch(RuntimeException $e){
-        assertSpeech(str_contains($e->getMessage(),'八戒'),
-            'reject a missing explicitly named speaker rather than saving incomplete result');
-    }
-
-    // S01/S02 and 镜头1 are shot IDs, not people speaking; a genuine
-    // silent establishing shot must still be accepted.
-    Http::swap(new \Illuminate\Http\Client\Factory());
-    Http::fake(['https://api.example.com/*'=>Http::response([
-        'choices'=>[['message'=>['content'=>json_encode([
-            'script_mode'=>'mixed','shots'=>[$silent],'assets'=>[],
-        ],JSON_UNESCAPED_UNICODE)]]],
-    ],200)]);
-    $silentScene=$engine->generate("S01：大棚环境建立镜头\n镜头1：白天全景没有对白",
-        '3D国风动画',15);
-    assertSpeech(count($silentScene['shots'])===1 &&
-        $silentScene['shots'][0]['dialogue']==='',
-        'numbered storyboard metadata must not be misread as named speakers');
+    $partial=$engine->generate($spokenSource,'3D国风动画',15);
+    assertSpeech(count($partial['shots'])===1 &&
+        str_contains($partial['shots'][0]['dialogue'],'悟空：'),
+        'ambiguous source-dialogue quality check must not reject otherwise valid model output');
 
     // Regression: a screenplay can prefix an action with "悟空一把拽住师父：".
     // That entire action phrase is NOT a character name. The old overly broad
@@ -175,7 +176,7 @@ try {
         str_contains(PromptPresets::defaultText('seedance'),'不生成字幕'),
         'new default editable templates match simplified editor and no-subtitle policy');
 
-    echo "Original speakers survive simplified editing, system prompts, video adaptation and missing-speaker checks\n";
+    echo "Model dialogue requirements retained, visual labels never block and simplified editor preserves voice fields\n";
 } finally {
     if($projectId!==null)
         DB::table('projects')->where('id',$projectId)->delete();
