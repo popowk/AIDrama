@@ -223,6 +223,8 @@
 <span class="shot-selection-mode muted small">{{ ($shotSelections[(string)$shot->id]['mode']??'auto')==='manual'?'人工已调整':(($shotSelections[(string)$shot->id]['mode']??'auto')==='ai'?'AI 已识别':'初步匹配 · 可 AI 识别') }}</span>
 <button class="button outline" type="button" onclick="recognizeShotAssets({{ $shot->id }},{{ $project->id }},this)" @disabled($project->status==='generating')>AI 识别本镜资产</button>
 </div>
+<details class="shot-assets-details" @if($allAssets->count()<=8) open @endif>
+<summary>勾选需要提供的资产图（资产较多时可展开调整）</summary>
 <form class="shot-assets-form" data-shot-id="{{ $shot->id }}" data-save-url="{{ route('shot.assets.save',[$project->id,$shot->id]) }}" method="post">
 @csrf
 <div class="shot-reference-items">
@@ -239,6 +241,7 @@
 @endforelse
 </div>
 </form>
+</details>
 <div class="shot-reference-status small muted" role="status" aria-live="polite">本镜当前选用 {{ count($shotReferences[(string)$shot->id]??[]) }} 项；折叠资产不参与提示词生成。</div>
 </div>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
