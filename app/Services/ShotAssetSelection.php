@@ -31,8 +31,15 @@ final class ShotAssetSelection
             $shot=DB::table('shots')->where('project_id',$projectId)->where('id',$shotId)->first();
             if(!$shot)throw new RuntimeException('本镜头已不存在');
             $chosen=self::activeIds($projectId,$ids);
+            // Folded assets are dormant, not deleted. Preserve their original
+            // manual links even when other active choices are edited.
+            $dormant=DB::table('shot_asset_links as links')
+                ->join('assets as a','a.id','=','links.asset_id')
+                ->where('links.shot_id',$shotId)->where('a.project_id',$projectId)
+                ->where('a.is_archived',true)->pluck('links.asset_id')
+                ->map(static fn($v)=>(int)$v)->all();
             DB::table('shot_asset_links')->where('shot_id',$shotId)->delete();
-            foreach($chosen as $assetId)
+            foreach(array_unique(array_merge($chosen,$dormant)) as $assetId)
                 DB::table('shot_asset_links')->insert([
                     'shot_id'=>$shotId,'asset_id'=>$assetId,
                     'created_at'=>now(),'updated_at'=>now(),
