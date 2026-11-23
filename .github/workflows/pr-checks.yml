@@ -34,6 +34,7 @@ jobs:
           node tests/inline-settings-ui.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-settings-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/short-video-mode-smoke.php
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/adjacent-shot-duration-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/short-video-continuity-and-assets-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/shot-asset-choices-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/conversation-delivery-smoke.php

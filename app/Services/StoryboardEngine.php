@@ -53,7 +53,7 @@ class StoryboardEngine
         $mode=$this->preferredMode;
         $short=$this->videoMode==='short';
         $profileRule=$short
-            ?"【短视频默认模式】尽可能缩短总时长并加快节奏；同一个场景内相邻的动作、眼神、表情和台词可合并为一个镜头，不因单独表情或轻微动作切镜。人物可以一边做动作一边说话；除非必须先完成动作才可以说话，否则 action_before 留空并把同步动作写进 visual。估时真实紧凑，只在空间或人物调度不连续时切镜。每镜可有两个角色轮流说话，dialogue 按“悟空：...\\n八戒：...”多行形式保留发言顺序。每镜返回同一场景的 scene 字段供合并判断；禁止生成字幕。"
+            ?"【短视频默认模式】按原剧本的时间先后顺序组织分镜，尽量保留原始标题、画面文案、动作细节和台词字句，不要自行重写成统一模板。相邻镜头由程序根据所选 15 秒或 30 秒上限计算能否合并；不要因相同场景、机位或人物动作等理由主动删改镜头内容，也不要自行添加连接文字。台词按人物原话和发言顺序保留。每镜给出真实估计时长，禁止生成字幕。"
             :"【正常故事片模式】保持原有完整叙事、情绪铺垫、画面调度和镜头拆分方式，不强行压缩和合并；允许镜头表达表情和先后动作。";
         $prompt="请按剧本输出分镜、人物、场景和道具清单。\n".$profileRule."\n".
           "风格：{$style}；画幅：".FrameProfile::label($this->frameRatio).
@@ -129,10 +129,6 @@ class StoryboardEngine
             $pre=trim((string)($item['action_before']??''));
             $short=$this->videoMode==='short';
             $scene=mb_substr(trim((string)($item['scene']??'')),0,190);
-            if($short && $pre!=='' && !preg_match('/(?:必须|先完成|完成后|之后才|在.*之前)/u',$pre)){
-                $visual.="；人物可在「{$pre}」的同时自然说话";
-                $pre='';
-            }
             $onScreen=$short?'':mb_substr(trim((string)($item['on_screen_text']??'')),0,5000);
             $delivery=ShotDelivery::normalize(
                 $item['delivery']??null,$dialogue,$visual,
@@ -161,7 +157,7 @@ class StoryboardEngine
                             static fn($value)=>is_string($value)?mb_substr(trim($value),0,190):'',
                             array_slice($item['asset_names'],0,100)
                         ))):null,
-                    'visual'=>$visual.($i>0?'（承接上一镜头，人物位置和动作保持连续）':''),
+                    'visual'=>$visual,
                     'dialogue'=>$part,'action_before'=>$partPre,
                     'on_screen_text'=>$onScreen,'delivery'=>$delivery,
                     'duration_seconds'=>$duration,
@@ -181,9 +177,8 @@ class StoryboardEngine
     }
 
     /**
-     * Merge only continuous scene beats with compatible camera, roles, time
-     * and speaking mode; one second of shot-change overhead can be removed
-     * when a genuine same-take continuation exists.
+     * In short-video mode, join adjacent shots strictly by the summed
+     * original durations and selected cap. Never rewrite scene copy.
      */
     private function compactShots(array $shots,int $limit):array
     {

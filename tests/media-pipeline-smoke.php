@@ -164,7 +164,32 @@ assertMedia($completed['status']==='ready','async image completes after polling'
 $final=DB::table('assets')->where('id',$asyncScene)->first();
 assertMedia(Storage::disk('local')->exists($final->file_path),'async image stored privately');
 assertMedia($taskSubmits===1,'polling did not resubmit image generation');
-Storage::disk('local')->delete($final->file_path);
+
+// Regression: after a successful image, "重新生成图片" must issue a
+// new client_task_id rather than re-poll the old successful task forever.
+$firstPath=$final->file_path;
+$firstId=$final->image_task_id;
+$regenerated=$controller->generate($id,$asyncScene,new ImageEngine());
+assertMedia($regenerated->getStatusCode()===202 && $taskSubmits===2,
+    'explicit regenerate after success submits one NEW image task');
+$second=DB::table('assets')->where('id',$asyncScene)->first();
+assertMedia($second->image_status==='generating' &&
+    $second->image_task_id!==$firstId && $second->file_path===$firstPath,
+    'new task ID is durable and first image stays visible while regenerating');
+$duplicate=$controller->generate($id,$asyncScene,new ImageEngine());
+assertMedia($duplicate->getStatusCode()===202 && $taskSubmits===2,
+    'double click during regenerate reuses new task, never creates a third paid job');
+DB::table('assets')->where('id',$asyncScene)->update(['image_poll_after'=>now()->subSecond()]);
+$regeneratedImage=$controller->status($id,$asyncScene)->getData(true);
+assertMedia($regeneratedImage['status']==='ready',
+    'regenerated task can finish without being trapped on old successful ID');
+$latest=DB::table('assets')->where('id',$asyncScene)->first();
+assertMedia($latest->file_path!==$firstPath &&
+    Storage::disk('local')->exists($latest->file_path) &&
+    Storage::disk('local')->exists($firstPath),
+    'regeneration stores a separate image without deleting the previous image');
+Storage::disk('local')->delete($firstPath);
+Storage::disk('local')->delete($latest->file_path);
 
 // Simulate an edge 524 after the task was accepted upstream. The response is
 // uncertain but the request must NOT issue a fresh paid job ID.

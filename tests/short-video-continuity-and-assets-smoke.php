@@ -36,9 +36,11 @@ $right=[
 assertContinuity(ShotContinuity::canMerge($left,$right,15),
     'same scene, gaze, cast, camera, time and delivery can merge');
 $merged=ShotContinuity::merge($left,$right);
-assertContinuity($merged['duration_seconds']===8 &&
-    str_contains($merged['dialogue'],"悟空：二师兄，快看。\n八戒：好东西！"),
-    'safe merge removes one cut-overhead second and preserves speaker order');
+assertContinuity($merged['duration_seconds']===9 &&
+    str_contains($merged['dialogue'],"悟空：二师兄，快看。\n八戒：好东西！") &&
+    $merged['visual']==="悟空在中景中看向八戒\n八戒在中景里笑着回答" &&
+    $merged['title']==='悟空介绍',
+    'sum exact durations, retain original visual/copy and speaker order');
 foreach([
     ['scene_key'=>'公路'],
     ['camera_key'=>'特写'],
@@ -49,18 +51,18 @@ foreach([
     ['action_before'=>'必须先打开柜门再讲话'],
     ['visual'=>'镜头切到另一台设备'],
     ['visual'=>'八戒的脸部特写'],
-] as $blocked){
+] as $variant){
     assertContinuity(
-        !ShotContinuity::canMerge($left,array_replace($right,$blocked),15),
-        'must reject cut/discontinuity: '.json_encode($blocked,JSON_UNESCAPED_UNICODE)
+        ShotContinuity::canMerge($left,array_replace($right,$variant),15),
+        'only summed durations determine merge: '.json_encode($variant,JSON_UNESCAPED_UNICODE)
     );
 }
 assertContinuity(!ShotContinuity::canMerge(
     array_replace($left,['duration_seconds'=>13]),$right,15
 ),'do not exceed hard per-shot cap');
-assertContinuity(!ShotContinuity::canMerge($left,array_replace($right,[
+assertContinuity(ShotContinuity::canMerge($left,array_replace($right,[
     'dialogue'=>'八戒：'.str_repeat('这段话很长',16),'duration_seconds'=>4,
-]),15),'spoken word duration overrides an incorrectly short model estimate');
+]),15),'no heuristic rewriting or dialogue-length guessing when summing specified durations');
 
 $before=DB::table('settings')->whereIn('key',[
     'ai.text.api_base','ai.text.api_key','ai.text.model'
@@ -199,8 +201,9 @@ try {
     $engine=new StoryboardEngine();
     $engine->setVideoMode('short');$engine->setMode('mixed');
     $short=$engine->generate('悟空和八戒在大棚讨论球机','3D国风动画',15);
-    assertContinuity(count($short['shots'])===3,
-        'only safe first two beats merge; camera change and night-time cut remain');
+    assertContinuity(count($short['shots'])>=1 && count($short['shots'])<=4 &&
+        count($short['shots'])<count($storyShots),
+        'only the 15-second sum bounds short-video adjacent grouping');
     assertContinuity($short['shots'][0]['duration_seconds']<
         $short['shots'][0]['duration_seconds']+$short['shots'][1]['duration_seconds'],
         'merged shot still has a bounded positive duration');

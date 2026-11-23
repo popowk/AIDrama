@@ -198,8 +198,17 @@ class AssetController
         if($record->image_status==='generating')
             return response()->json(['status'=>'generating','message'=>'已存在图片生成任务；正在查询原任务，不会重复计费'],202);
 
-        // Unknown outcomes are NOT permission to issue a new paid task.
-        if($record->image_task_id && $record->image_remote_status!=='failed') {
+        // An old successfully completed image is NOT a pending task. A
+        // deliberate click on "重新生成图片" must create a NEW remote task
+        // while retaining the previous private image until the new one is
+        // safely saved. Unknown/running outcomes must still be reconciled
+        // by client_task_id to prevent duplicate charges.
+        $previousCompleted=$record->image_status==='ready' &&
+            !empty($record->file_path) &&
+            $record->image_remote_status==='success' &&
+            !empty($record->image_task_id);
+        if($record->image_task_id && $record->image_remote_status!=='failed'
+            && !$previousCompleted) {
             DB::table('assets')->where('id',$asset)->where('project_id',$id)
                 ->where('image_task_id',$record->image_task_id)->update([
                     'image_status'=>'generating','image_poll_after'=>null,
@@ -211,10 +220,18 @@ class AssetController
         $taskId='aidrama-'.bin2hex(random_bytes(16));
         $query=DB::table('assets')->where('id',$asset)->where('project_id',$id)
             ->where('image_status','!=','generating');
-        if($record->image_task_id)
-            $query->where('image_task_id',$record->image_task_id)->where('image_remote_status','failed');
-        else
+        if($previousCompleted){
+            // This compare-and-swap prevents two clicks/tabs from racing to
+            // create two paid tasks from one successfully completed asset.
+            $query->where('image_status','ready')
+                ->where('image_task_id',$record->image_task_id)
+                ->where('image_remote_status','success');
+        }elseif($record->image_task_id){
+            $query->where('image_task_id',$record->image_task_id)
+                ->where('image_remote_status','failed');
+        }else{
             $query->whereNull('image_task_id');
+        }
         $claimed=$query->update([
             'image_task_id'=>$taskId,'image_status'=>'generating',
             'image_started_at'=>now(),'image_poll_after'=>now()->addSeconds(4),
