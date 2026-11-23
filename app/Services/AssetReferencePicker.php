@@ -12,7 +12,7 @@ final class AssetReferencePicker
     public static function list(object $project,object $shot):array
     {
         $assets=DB::table('assets')->where('project_id',$project->id)
-            ->orderBy('id')->get(['type','name','description','source_kind','file_path','is_archived']);
+            ->orderBy('id')->get(['id','type','name','description','source_kind','file_path','is_archived']);
         return self::fromAssets($assets,$shot);
     }
 
@@ -20,7 +20,7 @@ final class AssetReferencePicker
     public static function forProject(int $projectId):array
     {
         $assets=DB::table('assets')->where('project_id',$projectId)
-            ->orderBy('id')->get(['type','name','description','source_kind','file_path','is_archived']);
+            ->orderBy('id')->get(['id','type','name','description','source_kind','file_path','is_archived']);
         $shots=DB::table('shots')->where('project_id',$projectId)
             ->orderBy('sequence')->get(['id','title','visual','dialogue','action_before']);
         $result=[];
@@ -52,6 +52,7 @@ final class AssetReferencePicker
             }
             if($score===0)continue;
             $matched[]=[
+                'id'=>(int)$asset->id,
                 'name'=>$name,'type'=>$asset->type,
                 'direct'=>$score===100,
                 'required'=>$score>=90,

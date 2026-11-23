@@ -213,25 +213,39 @@
 <form method="post" action="{{ route('shot.save',[$project->id,$shot->id]) }}" class="form-stack" data-inline-save="shot">@csrf
 <label>镜头标题<input name="title" value="{{ $shot->title }}" maxlength="191" required></label>
 <label>画面与动作<textarea rows="3" name="visual" required>{{ $shot->visual }}</textarea></label>
-<div class="inline-fields"><label>开口之前必须完成的动作<textarea rows="2" name="action_before" placeholder="可边说边做的动作请写在画面与动作里">{{ $shot->action_before }}</textarea></label>
-<label>口播/台词（同一框可多人轮流说）
-<textarea rows="4" name="dialogue" placeholder="悟空：二师兄，看俺这个！&#10;八戒：这东西可真省心。">{{ $shot->dialogue }}</textarea>
-<small class="muted">多人对白请每行写“人物名：台词”，保留先后顺序；同一镜头可边动作边对话。</small></label></div>
-<div class="inline-fields"><label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label><label>声音呈现<select name="delivery"><option value="on_camera" @selected($shot->delivery==='on_camera')>人物面对镜头说话</option><option value="conversation" @selected($shot->delivery==='conversation')>人物之间对话（看向对方）</option><option value="voiceover" @selected($shot->delivery==='voiceover')>画外音 / 旁白</option><option value="none" @selected($shot->delivery==='none')>无口播</option></select></label></div>
+<p class="hint">人物动作、台词分配、说话方式和镜头内交流由 AI 根据剧本与画面自行判断，无需逐项设置。</p>
+<label class="legacy-screen-copy" @if(($project->video_mode??'short')==='short') hidden @endif>故事片原有画面文案<textarea rows="2" name="on_screen_text" placeholder="可选；视频提示词默认不生成字幕">{{ $shot->on_screen_text }}</textarea></label>
 <div class="button-row"><label class="duration">时长（秒）<input type="number" min="1" max="{{ $project->shot_limit }}" name="duration_seconds" value="{{ $shot->duration_seconds }}" required></label><button class="button outline" type="submit">保存此镜头</button></div>
 </form>
-<div class="shot-reference-list" id="shot-reference-{{ $shot->id }}" aria-live="polite">
-<strong class="small">本镜参考资产图</strong>
+<div class="shot-reference-list" id="shot-reference-{{ $shot->id }}">
+<div class="shot-reference-toolbar">
+<strong class="small">本镜参考资产图（可多选）</strong>
+<span class="shot-selection-mode muted small">{{ ($shotSelections[(string)$shot->id]['mode']??'auto')==='manual'?'人工已调整':(($shotSelections[(string)$shot->id]['mode']??'auto')==='ai'?'AI 已识别':'初步匹配 · 可 AI 识别') }}</span>
+<button class="button outline" type="button" onclick="recognizeShotAssets({{ $shot->id }},{{ $project->id }},this)" @disabled($project->status==='generating')>AI 识别本镜资产</button>
+</div>
+<details class="shot-assets-details" @if($allAssets->count()<=8) open @endif>
+<summary>勾选需要提供的资产图（资产较多时可展开调整）</summary>
+<form class="shot-assets-form" data-shot-id="{{ $shot->id }}" data-save-url="{{ route('shot.assets.save',[$project->id,$shot->id]) }}" method="post">
+@csrf
 <div class="shot-reference-items">
-@forelse(($shotReferences[(string)$shot->id]??[]) as $reference)
-<span class="shot-reference-item">请提供「{{ $reference['name'] }}」图片 · {{ $reference['required']?'必需':'可选' }}</span>
+@forelse($allAssets as $asset)
+<label class="shot-reference-option" data-asset-id="{{ $asset->id }}" @if($asset->is_archived) hidden @endif>
+<input type="checkbox" name="asset_ids[]" value="{{ $asset->id }}"
+  @checked(in_array((int)$asset->id,$shotSelections[(string)$shot->id]['selected_ids']??[],true))
+  @disabled($project->status==='generating'||$asset->is_archived)>
+<span class="shot-asset-name">{{ $asset->name }}</span>
+<span class="muted small">{{ ['character'=>'人物','scene'=>'场景','prop'=>'道具'][$asset->type]??$asset->type }}</span>
+</label>
 @empty
-<span class="muted small">本镜暂无匹配的参考资产，已折叠或无关资产不会列出。</span>
+<span class="muted small">资产清单为空，请先生成资产。</span>
 @endforelse
 </div>
+</form>
+</details>
+<div class="shot-reference-status small muted" role="status" aria-live="polite">本镜当前选用 {{ count($shotReferences[(string)$shot->id]??[]) }} 项；折叠资产不参与提示词生成。</div>
 </div>
 <div class="prompt-row"><select id="type-{{ $shot->id }}"><option value="kling">可灵 Kling</option><option value="seedance">Seedance</option><option value="stable-diffusion">Stable Diffusion 图片</option></select><button class="button ghost" type="button" onclick="loadPrompt({{ $shot->id }},{{ $project->id }})">生成适配提示词</button><button class="button ghost" type="button" onclick="copyPrompt({{ $shot->id }})">复制</button></div>
-<textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly placeholder="点击「生成适配提示词」查看结果..."></textarea>
+<textarea id="prompt-{{ $shot->id }}" class="prompt-output" rows="4" readonly aria-label="生成后自动展开的视频提示词" placeholder="点击「生成适配提示词」查看结果..."></textarea>
 </article>
 @endforeach
 @else<div class="empty">当前没有分镜。先输入完整剧本，或粘贴分镜表格并逐镜扩写，再点击「AI 生成分镜与资产清单」。</div>@endif
@@ -580,34 +594,129 @@ async function sendInlineForm(form){
   return result;
 }
 
+function shotAssetForm(shotId){
+ return document.querySelector('.shot-assets-form[data-shot-id="'+String(shotId)+'"]');
+}
+function selectedShotAssetIds(form,includeDisabled=false){
+ return Array.from(form?.querySelectorAll('input[name="asset_ids[]"]:checked')||[])
+   .filter(input=>
+     (includeDisabled||!input.disabled||form?.dataset.saving==='1') &&
+     (includeDisabled||!input.closest('.shot-reference-option')?.hidden))
+   .map(input=>Number(input.value)).filter(Number.isInteger);
+}
+function setShotAssetChecks(shotId,ids){
+ const form=shotAssetForm(shotId);
+ if(!form)return;
+ const selected=new Set((ids||[]).map(Number));
+ form.querySelectorAll('input[name="asset_ids[]"]').forEach(input=>{
+   input.checked=selected.has(Number(input.value));
+ });
+ form.dataset.savedIds=JSON.stringify(Array.from(selected));
+ updateShotReferenceList(shotId,selectedShotAssetIds(form).map(id=>({id})));
+}
 function updateShotReferenceList(shotId,references){
-  const root=document.getElementById('shot-reference-'+String(shotId));
-  const items=root?.querySelector('.shot-reference-items');
-  if(!items)return;
-  const nodes=[];
-  if(Array.isArray(references)){
-    for(const ref of references){
-      if(!ref||typeof ref.name!=='string')continue;
-      const element=document.createElement('span');
-      element.className='shot-reference-item';
-      element.textContent='请提供「'+ref.name+'」图片 · '+(ref.required?'必需':'可选');
-      nodes.push(element);
-    }
-  }
-  if(nodes.length===0){
-    const empty=document.createElement('span');
-    empty.className='muted small';
-    empty.textContent='本镜暂无匹配的参考资产，已折叠或无关资产不会列出。';
-    nodes.push(empty);
-  }
-  items.replaceChildren(...nodes);
+ const root=document.getElementById('shot-reference-'+String(shotId));
+ const note=root?.querySelector('.shot-reference-status');
+ if(!note)return;
+ const count=Array.isArray(references)?references.length:0;
+ note.textContent='本镜当前选用 '+count+' 项；未勾选和折叠资产不会加入提示词。';
 }
 function updateProjectShotReferences(map){
-  if(!map||typeof map!=='object'||Array.isArray(map))return;
-  for(const [shotId,references] of Object.entries(map))
-    updateShotReferenceList(shotId,references);
+ if(!map||typeof map!=='object'||Array.isArray(map))return;
+ for(const [shotId,references] of Object.entries(map))
+   updateShotReferenceList(shotId,references);
 }
-
+function showShotAssetStatus(form,message,error=false){
+ const output=form.closest('.shot-reference-list')?.querySelector('.shot-reference-status');
+ if(output){
+   output.textContent=message;
+   output.classList.toggle('is-error',error);
+ }
+}
+document.querySelectorAll('.shot-assets-form').forEach(form=>{
+ form.dataset.savedIds=JSON.stringify(selectedShotAssetIds(form,true));
+});
+document.addEventListener('change',async event=>{
+ const checkbox=event.target;
+ if(!(checkbox instanceof HTMLInputElement) ||
+     !checkbox.matches('.shot-assets-form input[name="asset_ids[]"]'))
+   return;
+ const form=checkbox.closest('.shot-assets-form');
+ if(!form||form.dataset.saving==='1')return;
+ const shotId=form.dataset.shotId;
+ const ids=selectedShotAssetIds(form);
+ const previous=JSON.parse(form.dataset.savedIds||'[]');
+ form.dataset.saving='1';
+ const fields=Array.from(form.querySelectorAll('input[name="asset_ids[]"]'));
+ fields.forEach(field=>field.disabled=true);
+ showShotAssetStatus(form,'正在保存本镜资产选择…');
+ try{
+   const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
+   const res=await fetch(form.dataset.saveUrl,{
+     method:'POST',credentials:'same-origin',cache:'no-store',
+     headers:{'X-CSRF-TOKEN':csrf||'','Accept':'application/json','Content-Type':'application/json'},
+     body:JSON.stringify({asset_ids:ids}),
+   });
+   const data=await res.json();
+   if(!res.ok||!data.ok)throw new Error(data.message||'保存失败（HTTP '+res.status+'）');
+   const saved=new Set((data.selected_ids||[]).map(Number));
+   fields.forEach(field=>field.checked=saved.has(Number(field.value)));
+   form.dataset.savedIds=JSON.stringify(Array.from(saved));
+   const mode=form.closest('.shot-reference-list')?.querySelector('.shot-selection-mode');
+   if(mode)mode.textContent='人工已调整';
+   document.getElementById('prompt-'+shotId).value='';
+   showShotAssetStatus(form,'✓ 已保存 '+saved.size+' 项参考资产；生成提示词时使用当前选择。');
+ }catch(error){
+   const previousIds=new Set(previous.map(Number));
+   fields.forEach(field=>field.checked=previousIds.has(Number(field.value)));
+   showShotAssetStatus(form,'保存失败：'+(error.message||String(error)),true);
+ }finally{
+   fields.forEach(field=>field.disabled=
+     form.closest('.shot-card')?.dataset.projectGenerating==='1'||
+     Boolean(field.closest('.shot-reference-option')?.hidden)
+   );
+   form.dataset.saving='0';
+ }
+});
+async function recognizeShotAssets(shotId,projectId,button){
+ if(button.disabled)return;
+ const shotForm=document.getElementById('shot-'+shotId)?.querySelector('form[data-inline-save="shot"]');
+ const form=shotAssetForm(shotId);
+ if(!shotForm||!form)return;
+ if(form.dataset.saving==='1'){
+   showShotAssetStatus(form,'当前勾选正在保存，保存完成后再让 AI 重新识别。');
+   return;
+ }
+ const previous=button.textContent;
+ button.disabled=true;
+ button.textContent='AI 识别中…';
+ showShotAssetStatus(form,'文字模型正在判断本镜应引用哪些人物、场景和道具…');
+ try{
+   const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
+   const res=await fetch('/projects/'+projectId+'/shots/'+shotId+'/assets/recognize',{
+     method:'POST',credentials:'same-origin',cache:'no-store',
+     headers:{'X-CSRF-TOKEN':csrf||'','Accept':'application/json'},
+     body:new FormData(shotForm),
+   });
+   const data=await res.json();
+   if(!res.ok||!data.ok)throw new Error(data.message||'识别失败（HTTP '+res.status+'）');
+   setShotAssetChecks(shotId,data.selected_ids||[]);
+   const mode=form.closest('.shot-reference-list')?.querySelector('.shot-selection-mode');
+   if(mode)mode.textContent='AI 已识别 · 可人工调整';
+   document.getElementById('prompt-'+shotId).value='';
+   showShotAssetStatus(form,'✓ AI 已识别 '+(data.selected_ids||[]).length+' 项，可继续勾选调整。');
+ }catch(error){
+   showShotAssetStatus(form,'AI 识别失败：'+(error.message||String(error)),true);
+ }finally{
+   button.disabled=false;
+   button.textContent=previous;
+ }
+}
+function expandPromptArea(area){
+ if(!area)return;
+ area.style.height='auto';
+ area.style.height=Math.max(150,area.scrollHeight+8)+'px';
+}
 function syncAssetTotals(){
   const active=document.querySelectorAll('.asset-fold-card:not(.is-archived)').length;
   const total=document.getElementById('asset-active-count');
@@ -651,6 +760,11 @@ async function toggleAssetFold(form){
     // Previously adapted prompts may still mention assets now folded.
     // Clear them and require a fresh model-generated prompt on next click.
     document.querySelectorAll('.prompt-output').forEach(area=>area.value='');
+    document.querySelectorAll('.shot-reference-option[data-asset-id="'+id+'"]').forEach(option=>{
+      option.hidden=archived;
+      const field=option.querySelector('input[type="checkbox"]');
+      if(field)field.disabled=archived||projectIsGenerating;
+    });
     updateProjectShotReferences(result.shot_references);
     syncAssetTotals();
   }catch(error){
@@ -954,6 +1068,7 @@ async function loadPrompt(shot,project){
  const type=document.getElementById('type-'+shot).value;
  const area=document.getElementById('prompt-'+shot);
  area.value='文本大模型正在生成适配提示词…';
+ expandPromptArea(area);
  try {
   const csrf=document.querySelector('meta[name="csrf-token"]')?.content;
   if(!csrf)throw new Error('登录已失效，请刷新页面');
@@ -961,6 +1076,9 @@ async function loadPrompt(shot,project){
   if(!shotForm)throw new Error('无法读取当前分镜编辑框');
   const payload=new FormData(shotForm);
   payload.set('target',type);
+  payload.set('asset_ids_present','1');
+  const selection=shotAssetForm(shot);
+  if(selection)selectedShotAssetIds(selection).forEach(id=>payload.append('asset_ids[]',String(id)));
   const res=await fetch('/projects/'+project+'/shots/'+shot+'/prompt',{
     method:'POST',credentials:'same-origin',
     headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json'},
@@ -969,7 +1087,11 @@ async function loadPrompt(shot,project){
   const data=await res.json();
   if(!res.ok)throw new Error(data.message||'HTTP '+res.status);
   area.value=data.prompt||'';
- } catch(e){area.value='视频提示词生成失败：'+e.message}
+  expandPromptArea(area);
+ } catch(e){
+  area.value='视频提示词生成失败：'+e.message;
+  expandPromptArea(area);
+ }
 }
 async function copyPrompt(shot){
  const text=document.getElementById('prompt-'+shot).value;

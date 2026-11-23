@@ -195,3 +195,23 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .shot-reference-items{display:flex;align-items:flex-start;flex-wrap:wrap;gap:7px 9px}
 .shot-reference-item{border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;max-width:100%}
 @media(max-width:560px){.shot-reference-items{flex-direction:column}.shot-reference-item{width:100%}}
+
+/* Per-shot multi-select: AI picks first, creator can adjust without reloading. */
+.shot-reference-list{display:flex;flex-direction:column;gap:10px}
+.shot-reference-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.shot-reference-toolbar strong{margin-right:auto}
+.shot-reference-toolbar .button{padding:7px 11px;font-size:12px}
+.shot-reference-items{display:flex;align-items:stretch;flex-wrap:wrap;gap:8px}
+.shot-reference-option{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;min-height:36px;
+  border:1px solid var(--line);border-radius:9px;cursor:pointer;max-width:100%;font-size:12px}
+.shot-reference-option:has(input:checked){border-color:#6e8fe3;background:rgba(100,137,225,.12)}
+.shot-reference-option input{width:16px;height:16px;flex-shrink:0}
+.shot-reference-option[hidden]{display:none!important}
+.shot-asset-name{overflow-wrap:anywhere;min-width:0}
+.shot-reference-status{line-height:1.5}
+.shot-reference-status.is-error{color:#ffb4bd}
+.prompt-output{box-sizing:border-box;overflow-y:hidden;min-height:112px;resize:vertical}
+@media(max-width:560px){.shot-reference-toolbar{align-items:flex-start}.shot-reference-option{width:100%}}
+
+.shot-assets-details>summary{cursor:pointer;padding:6px 0;font-size:12px;color:var(--muted,#a9b8d4)}
+.shot-assets-details[open]>summary{margin-bottom:8px}

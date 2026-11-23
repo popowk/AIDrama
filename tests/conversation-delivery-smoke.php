@@ -93,8 +93,8 @@ try {
             'delivery'=>'conversation','duration_seconds'=>9,
         ],[],[],['HTTP_ACCEPT'=>'application/json']);
     $fake=new class extends PromptBuilder {
-        public function generate(object $project,object $shot,string $target):string {
-            return $this->build($project,$shot,$target);
+        public function generate(object $project,object $shot,string $target,?array $assetIds=null):string {
+            return $this->build($project,$shot,$target,$assetIds);
         }
     };
     $response=$controller->prompt($projectId,$shotId,$draft,$fake);
