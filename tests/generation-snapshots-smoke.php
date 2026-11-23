@@ -179,7 +179,8 @@ try {
 
     DB::table('generation_jobs')->where('id',$newJob->id)->update(['status'=>'failed']);
     DB::table('projects')->where('id',$id)->update(['status'=>'ready']);
-    DB::table('assets')->where('project_id',$id)->limit(1)->update([
+    $targetAsset=(int)DB::table('assets')->where('project_id',$id)->value('id');
+    DB::table('assets')->where('project_id',$id)->where('id',$targetAsset)->update([
         'image_status'=>'generating',
     ]);
     $blockedImage=$controller->restoreSnapshot(ajax(),$id,$snapshotId);
