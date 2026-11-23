@@ -202,10 +202,12 @@ class StoryboardEngine
             '镜头：'.$shot['title'],
             '画面与连续动作：'.$shot['visual'],
         ];
-        if(trim((string)($shot['action_before']??''))!=='')
+        if(trim((string)($shot['action_before']??''))!=='' &&
+            !ShotText::dialogueCoveredByVisual((string)$shot['visual'],(string)$shot['action_before']))
             $parts[]='必须在开口之前完成的动作：'.$shot['action_before'];
-        if(trim((string)($shot['dialogue']??''))!=='')
-            $parts[]='人物台词（按原顺序）：'.$shot['dialogue'];
+        $missing=ShotText::missingDialogueLines((string)$shot['visual'],(string)($shot['dialogue']??''));
+        if($missing!==[])
+            $parts[]='人物台词（按原顺序）：'.implode("\n",$missing);
         $parts[]='声音呈现：'.ShotDelivery::label((string)$shot['delivery']);
         $parts[]='目标时长：'.$shot['duration_seconds'].'秒。';
         $parts[]='同镜头可以一边做动作一边说话；保持角色和道具位置连续，不另加转场、字幕或画面文字。';
