@@ -279,6 +279,15 @@
 {{-- This helper is served inline: the updater syncs CSS but not new public JS files. --}}
 <script>{!! file_get_contents(public_path('storyboard-state.js')) !!}</script>
 <script>
+function sizeShotContent(field){
+  if(!field)return;
+  field.style.height='auto';
+  field.style.height=Math.max(145,field.scrollHeight+8)+'px';
+}
+document.querySelectorAll('textarea[name="shot_content"]').forEach(field=>{
+  sizeShotContent(field);
+  field.addEventListener('input',()=>sizeShotContent(field));
+});
 const projectStyleSelector=document.getElementById('project-style-selector');
 if(projectStyleSelector){
   const customLabel=document.getElementById('project-custom-style');
@@ -942,7 +951,10 @@ document.addEventListener('submit',async event=>{
       const prompt=card.querySelector('.prompt-output');
       if(prompt)prompt.value='';
       const text=card.querySelector('textarea[name="shot_content"]');
-      if(text && typeof result.shot_content==='string')text.value=result.shot_content;
+      if(text && typeof result.shot_content==='string'){
+        text.value=result.shot_content;
+        sizeShotContent(text);
+      }
       if(result.references)updateShotReferenceList(card.id.replace('shot-',''),result.references);
     }
     if(ratioField)showRatioNotice(form,'✓','success');
