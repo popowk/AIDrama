@@ -13,7 +13,7 @@ class PromptBuilder
      * to the configured text LLM; merely clicking the UI is no longer a
      * string-concatenation shortcut.
      */
-    public function build(object $project,object $shot,string $target):string
+    public function build(object $project,object $shot,string $target,?array $assetIds=null):string
     {
         $target=in_array($target,['kling','seedance','stable-diffusion'],true)?$target:'kling';
         if($target==='stable-diffusion'){
@@ -47,15 +47,15 @@ class PromptBuilder
         $body.="\n".VideoProfile::dialogueInstructions()."\n";
         $body.="字幕：不要生成字幕、画面文字、水印或额外的叠加文案。\n";
         $body.=VideoProfile::musicInstructions((bool)($project->allow_background_music??false));
-        $references=AssetReferencePicker::guidance($project,$shot);
+        $references=ShotAssetSelection::guidance($project,$shot,$assetIds);
         if($references!=='')$body.="\n".$references;
         return trim($rules."\n\n".$body);
     }
 
     /** Actual model-assisted prompt writing (not a local template return). */
-    public function generate(object $project,object $shot,string $target):string
+    public function generate(object $project,object $shot,string $target,?array $assetIds=null):string
     {
-        $basePrompt=$this->build($project,$shot,$target);
+        $basePrompt=$this->build($project,$shot,$target,$assetIds);
         $settings=DB::table('settings')
             ->whereIn('key',['ai.text.api_key','ai.api_key','ai.text.api_base','ai.api_base',
                 'ai.text.model','ai.model'])->pluck('value','key');
@@ -88,7 +88,7 @@ class PromptBuilder
         $text=$this->cleanModelOutput(trim($raw));
         // Ground essential references and policies outside of the model output:
         // the model cannot silently drop active asset references or no-BGM.
-        $references=AssetReferencePicker::guidance($project,$shot);
+        $references=ShotAssetSelection::guidance($project,$shot,$assetIds);
         $guard="\n\n【生成约束】\n"
             ."本镜声音呈现：".ShotDelivery::label((string)($shot->delivery??'on_camera'))."。".ShotDelivery::direction((string)($shot->delivery??'on_camera'))."\n"
             ."不生成任何字幕、叠加文字或水印。\n"
