@@ -9,6 +9,7 @@ use App\Services\FrameProfile;
 use App\Services\StoryboardTable;
 use App\Services\ProjectSnapshots;
 use App\Services\AssetReferencePicker;
+use App\Services\ShotAssetSelection;
 use App\Services\ScriptExpansionEngine;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
@@ -91,10 +92,13 @@ class StudioController
         $selectedSkills=CreativeLibrary::skillIds($project->creative_skills??null);
         $scriptSegments=json_decode((string)($project->script_segments??'[]'),true)?:[];
         $snapshots=ProjectSnapshots::list($id);
+        $shotSelections=ShotAssetSelection::forProject($id,$shots,$allAssets);
         $shotReferences=[];
-        foreach($shots as $shot)
-            $shotReferences[(string)$shot->id]=AssetReferencePicker::fromAssets($allAssets,$shot);
-        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets','snapshots','shotReferences'));
+        foreach($shots as $shot){
+            $selected=$shotSelections[(string)$shot->id]['selected_ids']??[];
+            $shotReferences[(string)$shot->id]=ShotAssetSelection::references($project,$shot,$selected);
+        }
+        return view('project',compact('project','shots','assets','total','stylePresets','creativeSkills','selectedSkills','scriptSegments','archivedAssets','allAssets','snapshots','shotReferences','shotSelections'));
     }
     public function previewStoryboard(Request $request,int $id) {
         $this->project($id);
@@ -398,16 +402,20 @@ class StudioController
                     ->keyBy(static fn($a)=>$a->type.'|'.$a->name);
                 DB::table('shots')->where('project_id',$id)->delete();
                 DB::table('assets')->where('project_id',$id)->delete();
+                $shotAssetNames=[];
                 foreach ($result['shots'] as $i=>$shot) {
-                    DB::table('shots')->insert([
+                    $idOfShot=DB::table('shots')->insertGetId([
                         'project_id'=>$id,'sequence'=>$i+1,'title'=>$shot['title'],
                         'visual'=>$shot['visual'],'dialogue'=>$shot['dialogue'],
                         'action_before'=>$shot['action_before'],
                         'on_screen_text'=>$shot['on_screen_text']??null,
                         'delivery'=>$shot['delivery']??'on_camera',
                         'duration_seconds'=>$shot['duration_seconds'],'prompt'=>$shot['prompt'],
+                        'asset_selection_mode'=>is_array($shot['asset_names']??null)?'ai':'auto',
                         'created_at'=>now(),'updated_at'=>now(),
                     ]);
+                    if(is_array($shot['asset_names']??null))
+                        $shotAssetNames[$idOfShot]=$shot['asset_names'];
                 }
                 $included=[];
                 foreach($result['assets'] as $asset) {
@@ -461,6 +469,23 @@ class StudioController
                         'image_error'=>$old->image_error??null,
                         'created_at'=>now(),'updated_at'=>now(),
                     ]);
+                }
+                // Preserve AI suggestions as stable asset IDs (not fragile
+                // names) so the user can later override each shot by checkbox.
+                if($shotAssetNames){
+                    $candidates=DB::table('assets')->where('project_id',$id)
+                        ->where('is_archived',false)->get(['id','name'])->groupBy('name');
+                    foreach($shotAssetNames as $shotId=>$names){
+                        $ids=[];
+                        foreach($names as $name)
+                            foreach($candidates->get($name,collect()) as $assetRow)
+                                $ids[(int)$assetRow->id]=(int)$assetRow->id;
+                        foreach($ids as $assetId)
+                            DB::table('shot_asset_links')->insert([
+                                'shot_id'=>$shotId,'asset_id'=>$assetId,
+                                'created_at'=>now(),'updated_at'=>now(),
+                            ]);
+                    }
                 }
                 DB::table('generation_jobs')->where('id',$job->id)->update([
                     'status'=>'done','finished_at'=>now(),'updated_at'=>now(),
@@ -588,11 +613,57 @@ class StudioController
             return response()->json([
                 'ok'=>true,'message'=>'镜头已保存',
                 'title'=>$v['title'],'duration_seconds'=>(int)$v['duration_seconds'],
-                'references'=>AssetReferencePicker::list($project,$saved),
+                'references'=>ShotAssetSelection::references($project,$saved),
             ]);
         }
         return redirect()->to(route('project.show',$id).'#shot-'.$shot)->with('ok','镜头已保存');
     }
+    public function saveShotAssets(Request $request,int $id,int $shot)
+    {
+        $this->project($id);
+        if(!DB::table('shots')->where('project_id',$id)->where('id',$shot)->exists())abort(404);
+        $values=$request->validate([
+            'asset_ids'=>'present|array|max:100',
+            'asset_ids.*'=>'integer|min:1',
+        ]);
+        try{
+            $chosen=ShotAssetSelection::save($id,$shot,$values['asset_ids'],'manual');
+            return response()->json([
+                'ok'=>true,'message'=>'已保存本镜参考资产',
+                'selected_ids'=>$chosen,'mode'=>'manual',
+            ]);
+        }catch(RuntimeException $e){
+            return response()->json(['ok'=>false,'message'=>$e->getMessage()],409);
+        }
+    }
+
+    public function recognizeShotAssets(Request $request,int $id,int $shot)
+    {
+        $project=$this->project($id);
+        $item=DB::table('shots')->where('project_id',$id)->where('id',$shot)->first();
+        if(!$item)abort(404);
+        if($project->status==='generating')
+            return response()->json(['ok'=>false,'message'=>'分镜生成过程中不能重新识别资产'],409);
+        if($request->has('visual')){
+            $edited=$request->validate([
+                'title'=>'required|string|max:191','visual'=>'required|string|max:20000',
+                'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
+            ]);
+            $item=clone $item;
+            foreach($edited as $field=>$value)$item->$field=$value;
+        }
+        try{
+            $suggested=ShotAssetSelection::recommend($project,$item);
+            $chosen=ShotAssetSelection::save($id,$shot,$suggested,'ai');
+            return response()->json([
+                'ok'=>true,'message'=>'AI 已识别本镜参考资产，可继续勾选调整',
+                'selected_ids'=>$chosen,'mode'=>'ai',
+            ]);
+        }catch(RuntimeException $e){
+            return response()->json(['ok'=>false,'message'=>$e->getMessage()],422);
+        }
+    }
+
     public function prompt(int $id,int $shot,Request $request,PromptBuilder $builder) {
         $project=$this->project($id);
         $item=DB::table('shots')->where('id',$shot)->where('project_id',$id)->first();
@@ -608,15 +679,25 @@ class StudioController
                 'visual'=>'required|string|max:20000',
                 'action_before'=>'nullable|string|max:5000',
                 'dialogue'=>'nullable|string|max:20000',
-                'delivery'=>['required',Rule::in(['on_camera','conversation','voiceover','none'])],
+                'delivery'=>['sometimes',Rule::in(['on_camera','conversation','voiceover','none'])],
                 'duration_seconds'=>'required|integer|min:1|max:'.$project->shot_limit,
             ]);
             $item=clone $item;
             foreach($editing as $field=>$value)$item->$field=$value;
         }
+        // The checkbox set is authoritative even if the user clicked
+        // generate immediately after changing a selection.
+        $selection=null;
+        if($request->boolean('asset_ids_present')){
+            $chosen=$request->validate([
+                'asset_ids'=>'sometimes|array|max:100',
+                'asset_ids.*'=>'integer|min:1',
+            ]);
+            $selection=ShotAssetSelection::activeIds($id,$chosen['asset_ids']??[]);
+        }
         try {
             return response()->json(['target'=>$v['target'],
-                'prompt'=>$builder->generate($project,$item,$v['target'])]);
+                'prompt'=>$builder->generate($project,$item,$v['target'],$selection)]);
         }catch(RuntimeException $e){
             return response()->json(['message'=>$e->getMessage()],422);
         }
