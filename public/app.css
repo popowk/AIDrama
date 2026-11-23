@@ -212,3 +212,6 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .shot-reference-status.is-error{color:#ffb4bd}
 .prompt-output{box-sizing:border-box;overflow-y:hidden;min-height:112px;resize:vertical}
 @media(max-width:560px){.shot-reference-toolbar{align-items:flex-start}.shot-reference-option{width:100%}}
+
+.shot-assets-details>summary{cursor:pointer;padding:6px 0;font-size:12px;color:var(--muted,#a9b8d4)}
+.shot-assets-details[open]>summary{margin-bottom:8px}
