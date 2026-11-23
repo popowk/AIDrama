@@ -213,8 +213,14 @@ input,select,textarea{display:block;width:100%;margin-top:6px;border:1px solid #
 .prompt-output{box-sizing:border-box;overflow-y:hidden;min-height:112px;resize:vertical}
 @media(max-width:560px){.shot-reference-toolbar{align-items:flex-start}.shot-reference-option{width:100%}}
 
-.shot-assets-details>summary{cursor:pointer;padding:6px 0;font-size:12px;color:var(--muted,#a9b8d4)}
-.shot-assets-details[open]>summary{margin-bottom:8px}
+/* AI-determined dialogue is displayed, not another field to configure. */
+.shot-dialogue{border:1px solid #364867;background:#101b30;border-radius:11px;padding:12px 14px}
+.shot-dialogue-heading{display:flex;gap:8px 14px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:7px}
+.shot-dialogue-heading strong{color:#d7e2ff;font-size:13px}
+.shot-dialogue-content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;font-size:13px;color:#e8efff}
+.shot-dialogue-empty{color:var(--muted);font-size:12px;line-height:1.65}
+.shot-reference-items{margin-top:2px}
+@media(max-width:540px){.shot-dialogue{padding:10px 11px}.shot-dialogue-heading{align-items:flex-start}}
 
 /* Full-resolution image access must remain available without JavaScript. */
 .asset-preview-trigger{text-decoration:none}
