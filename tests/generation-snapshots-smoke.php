@@ -5,6 +5,8 @@ $app=require dirname(__DIR__).'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 use App\Http\Controllers\StudioController;
+use App\Http\Controllers\AssetController;
+use App\Services\ImageEngine;
 use App\Services\ProjectSnapshots;
 use App\Services\StoryboardEngine;
 use Illuminate\Http\Request;
@@ -186,6 +188,23 @@ try {
     $blockedImage=$controller->restoreSnapshot(ajax(),$id,$snapshotId);
     assertSnapshot($blockedImage->getStatusCode()===409,
         'image tasks must not be lost by restoring a snapshot');
+
+    // Regenerating the whole storyboard while a paid image task is in flight
+    // can orphan the provider task if the new model renames an asset.
+    $beforeJobs=DB::table('generation_jobs')->where('project_id',$id)->count();
+    $blockedRegeneration=$controller->generate($id);
+    assertSnapshot($blockedRegeneration->getStatusCode()===302 &&
+        DB::table('generation_jobs')->where('project_id',$id)->count()===$beforeJobs,
+        'text generation must not be queued during an active image job');
+
+    // Conversely, an image request must not start while project generation is
+    // underway. Do not call provider or create a paid remote task.
+    DB::table('projects')->where('id',$id)->update(['status'=>'generating']);
+    DB::table('assets')->where('id',$targetAsset)->update(['image_status'=>'pending']);
+    $blockedNewImage=(new AssetController())->generate($id,$targetAsset,new ImageEngine());
+    assertSnapshot($blockedNewImage->getStatusCode()===409 &&
+        DB::table('assets')->where('id',$targetAsset)->value('image_status')==='pending',
+        'paid image task must not be submitted during text generation');
 
     echo "Atomic snapshots, renamed-asset recovery, reversible restore, JSON errors and deduplicated job retries passed\n";
 }finally {
