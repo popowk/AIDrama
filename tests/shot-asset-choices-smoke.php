@@ -110,6 +110,11 @@ try {
         !in_array('中维AOV太阳能球机',
             array_column($body['shot_references'][(string)$shotId],'name'),true),
         'folded selected asset immediately disappears from per-shot prompt requirements');
+    // Editing another checkbox while product is folded must not erase
+    // the dormant product selection; it should revive when restored.
+    $controller->saveShotAssets(reqChoices([
+        'asset_ids'=>[$assetIds['悟空']]
+    ]),$projectId,$shotId);
     $restore=(new AssetController())->restore($projectId,$assetIds['中维AOV太阳能球机']);
     $body=json_decode((string)$restore->getContent(),true);
     assertChoices(!$body['archived'] &&
