@@ -111,6 +111,80 @@ try {
     assertCombined($legacy->getStatusCode()===200 &&
         DB::table('shots')->where('id',$shotId)->value('dialogue')==='悟空：旧接口对白。',
         'pre-existing separate-field API clients remain supported');
+    // Regression from a real screenshot: the full spoken sentences are
+    // already present inside the source shot narrative. The old formatter
+    // appended a second 【台词 / 旁白】 block with the very same lines.
+    $quotedVisual=implode("\n",[
+        '青灰山石古道与远处木构山亭构成完整环境，冷蓝边光与暖金主光交织。唐僧牵白马立于路中，悟空在前方探路回头。',
+        '现代背包女子靠坐路边，抬头看向唐僧，口型同步呼救“长老救我！深山徒步迷路，手机没电！”。唐僧面露侧隐，口型同步回应“阿弥陀佛……”。',
+        '悟空一把拽住唐僧衣袖，挡在师父身前，口型同步警告“师父小心！荒山野岭，必有蹊跷，待俺找出证据！”。唐僧被拽住后看向悟空，口型同步回应“悟空，休得无礼。荒山野岭，何以为证？”。',
+        '女子近景，仍瘫坐路边；无台词，口型闭合。悟空拿出手机看监控回放。',
+    ]);
+    $quotedDialogue=implode("\n",[
+        '女子：长老救我！深山徒步迷路，手机没电！',
+        '唐僧：阿弥陀佛......',
+        '悟空：师父小心！荒山野岭，必有蹊跷，待俺找出证据！',
+        '唐僧：悟空，休得无礼。荒山野岭，何以为证？',
+    ]);
+    $quotedShot=(object)[
+        'visual'=>$quotedVisual,'dialogue'=>$quotedDialogue,'action_before'=>'',
+    ];
+    assertCombined(ShotText::format($quotedShot)===$quotedVisual &&
+        !str_contains(ShotText::format($quotedShot),'【台词 / 旁白】'),
+        'quoted speech in visual is not appended a second time or reformatted');
+    $quotedParts=ShotText::parse(ShotText::format($quotedShot),$quotedShot);
+    assertCombined($quotedParts===[
+        'visual'=>$quotedVisual,'dialogue'=>$quotedDialogue,'action_before'=>'',
+    ], 'saving a deduplicated textarea preserves all four original speakers');
+    $quotedId=DB::table('shots')->insertGetId([
+        'project_id'=>$projectId,'sequence'=>2,'title'=>'古道呼救',
+        'visual'=>$quotedVisual,'dialogue'=>$quotedDialogue,
+        'delivery'=>'conversation','duration_seconds'=>12,
+        'created_at'=>now(),'updated_at'=>now(),
+    ]);
+    $quotedSave=$controller->saveShot(combinedRequest([
+        'title'=>'古道呼救','shot_content'=>ShotText::format($quotedShot),
+        'duration_seconds'=>12,
+    ]),$projectId,$quotedId);
+    $quotedSaved=DB::table('shots')->where('id',$quotedId)->first();
+    $savedContent=json_decode((string)$quotedSave->getContent(),true);
+    assertCombined($quotedSave->getStatusCode()===200 &&
+        $quotedSaved->dialogue===$quotedDialogue &&
+        $quotedSaved->delivery==='conversation' &&
+        $savedContent['shot_content']===$quotedVisual,
+        'inline save keeps voice metadata but does not regenerate duplicate visible text');
+    $quotedBrief=(new PromptBuilder())->build($project,$quotedSaved,'kling');
+    foreach([
+        '长老救我！深山徒步迷路，手机没电！',
+        '师父小心！荒山野岭，必有蹊跷，待俺找出证据！',
+        '悟空，休得无礼。荒山野岭，何以为证？',
+    ] as $line)
+        assertCombined(substr_count($quotedBrief,$line)===1,
+            'adapted video brief does not duplicate already-quoted utterance: '.$line);
+    assertCombined(!str_contains($quotedBrief,'【必须逐字保留的对白】'),
+        'do not append an extra mandatory dialogue block in deterministic brief');
+
+    // Partial overlap: only the genuinely missing sentence is shown,
+    // and save rebuilds the full internal dialogue in original order.
+    $partial=(object)[
+        'visual'=>'女子口型同步呼救“长老救我！深山徒步迷路，手机没电！”。',
+        'dialogue'=>"女子：长老救我！深山徒步迷路，手机没电！\n唐僧：阿弥陀佛……",
+        'action_before'=>'',
+    ];
+    $partialDisplay=ShotText::format($partial);
+    assertCombined(substr_count($partialDisplay,'长老救我！深山徒步迷路，手机没电！')===1 &&
+        str_contains($partialDisplay,"【台词 / 旁白】\n唐僧：阿弥陀佛……") &&
+        !str_contains($partialDisplay,'【台词 / 旁白】'."\n".'女子：'),
+        'partial overlap only adds actually missing lines');
+    assertCombined(ShotText::parse($partialDisplay,$partial)['dialogue']===$partial->dialogue,
+        'rejoining partially embedded lines preserves the order and wording');
+
+    // If a user deletes the original quote, it must not reappear via stale
+    // internal voice metadata after the save.
+    $removed=ShotText::parse('只有山路环境，没有人说话。',$quotedShot);
+    assertCombined($removed['dialogue']==='' && $removed['visual']==='只有山路环境，没有人说话。',
+        'deleted spoken lines are not silently reintroduced on save');
+
     echo "One visual/action/speech textbox, drafts, save, prompt and legacy API compatibility passed\n";
 }finally {
     DB::table('projects')->where('id',$projectId)->delete();
