@@ -116,6 +116,26 @@ try {
     assertContinuity($product['required']===true &&
         $scene['required']===false,
         'distinguish required product reference from optional environment reference');
+    $shotId=DB::table('shots')->insertGetId([
+        'project_id'=>$projectId,'sequence'=>1,
+        'title'=>$shot->title,'visual'=>$shot->visual,
+        'dialogue'=>$shot->dialogue,'action_before'=>$shot->action_before,
+        'delivery'=>'conversation','duration_seconds'=>8,
+        'created_at'=>now(),'updated_at'=>now(),
+    ]);
+    $initialRefs=AssetReferencePicker::forProject($projectId);
+    assertContinuity(isset($initialRefs[(string)$shotId]) &&
+        count($initialRefs[(string)$shotId])===count($selected),
+        'the storyboard 04 reference preview uses identical matching to prompt generation');
+    DB::table('assets')->where('project_id',$projectId)
+        ->where('name','中维AOV太阳能球机')->update(['is_archived'=>true]);
+    $foldedRefs=AssetReferencePicker::forProject($projectId);
+    assertContinuity(!in_array('中维AOV太阳能球机',
+        array_column($foldedRefs[(string)$shotId],'name'),true),
+        'folding an asset immediately removes it from storyboard reference data');
+    DB::table('assets')->where('project_id',$projectId)
+        ->where('name','中维AOV太阳能球机')->update(['is_archived'=>false]);
+
     $guidance=AssetReferencePicker::guidance($project,$shot);
     assertContinuity(str_contains($guidance,'请提供「中维AOV太阳能球机」图片（本镜必需）') &&
         str_contains($guidance,'请提供「大棚外景」图片（可选参考'),
