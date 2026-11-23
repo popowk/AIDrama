@@ -596,7 +596,9 @@ function shotAssetForm(shotId){
 }
 function selectedShotAssetIds(form,includeDisabled=false){
  return Array.from(form?.querySelectorAll('input[name="asset_ids[]"]:checked')||[])
-   .filter(input=>includeDisabled||!input.disabled)
+   .filter(input=>
+     (includeDisabled||!input.disabled||form?.dataset.saving==='1') &&
+     (includeDisabled||!input.closest('.shot-reference-option')?.hidden))
    .map(input=>Number(input.value)).filter(Number.isInteger);
 }
 function setShotAssetChecks(shotId,ids){
@@ -678,6 +680,10 @@ async function recognizeShotAssets(shotId,projectId,button){
  const shotForm=document.getElementById('shot-'+shotId)?.querySelector('form[data-inline-save="shot"]');
  const form=shotAssetForm(shotId);
  if(!shotForm||!form)return;
+ if(form.dataset.saving==='1'){
+   showShotAssetStatus(form,'当前勾选正在保存，保存完成后再让 AI 重新识别。');
+   return;
+ }
  const previous=button.textContent;
  button.disabled=true;
  button.textContent='AI 识别中…';
