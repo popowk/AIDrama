@@ -35,8 +35,7 @@ class PromptBuilder
         $body.="镜头 {$shot->sequence}：{$shot->title}\n"
             ."画面与运动：{$shot->visual}\n";
         if($shot->action_before)
-            $body.=($short?'同步动作（允许在做动作时说话）：':'开口之前的动作：')
-                .$shot->action_before."\n";
+            $body.="开口前必须完成的动作：".$shot->action_before."\n";
         $body.="声音呈现：{$voice}\n";
         if($voiceDirection!=='')$body.="人物视线、声音和动作调度：{$voiceDirection}\n";
         if($shot->dialogue)
@@ -77,7 +76,7 @@ class PromptBuilder
                 'model'=>$model,'temperature'=>0.25,
                 'messages'=>[
                     ['role'=>'system','content'=>'你是专业视频提示词导演。把用户给出的分镜信息写成可直接用于视频生成模型的高质量提示词，保持原始事实、人物、台词、型号、画幅和时长。不输出解释，不编造参考图已上传的事实。不生成字幕、画面文字或水印。根据分镜声音呈现区分：conversation 为人物对人物自然交流、看向对方而不是镜头；on_camera 才是人物对镜头口播；voiceover 为画外音。对白严格保留“人物名：台词”的发言顺序，不要自动加入背景音乐。必须保留全部提供参考图的需求。'],
-                    ['role'=>'user','content'=>"请针对 {$target} 使用以下镜头事实和提示词模板撰写最终提示词。请直接返回纯文本。不要声称用户未上传图片；只列出需要提供的资产图片名称，不能假装这些图片已作为附件发送。\n\n".$basePrompt],
+                    ['role'=>'user','content'=>"请针对 {$target} 使用以下镜头事实和提示词模板撰写最终提示词。请直接返回纯文本。参考图片清单、无字幕/背景音乐规则和逐字对白由系统在末尾统一附加，不要再次罗列“请提供 XX 图片”条目或重复输出规则。不要声称用户未上传图片，不能假装图片已经作为附件发送。\n\n".$basePrompt],
                 ],
             ]);
         if(!$response->successful())
@@ -86,8 +85,7 @@ class PromptBuilder
         if(is_array($raw))$raw=implode("\n",array_map(static fn($x)=>is_array($x)?(string)($x['text']??''):'',$raw));
         if(!is_string($raw)||trim($raw)==='')
             throw new RuntimeException('文本模型没有返回有效视频提示词');
-        $text=trim($raw);
-        $text=preg_replace('/^.*(?:尚未上传|未上传图片|缺少参考图|没有上传).*(?:\r?\n|$)/mu','',$text);
+        $text=$this->cleanModelOutput(trim($raw));
         // Ground essential references and policies outside of the model output:
         // the model cannot silently drop active asset references or no-BGM.
         $references=AssetReferencePicker::guidance($project,$shot);
@@ -101,4 +99,26 @@ class PromptBuilder
         if($references!=='')$guard.="\n".$references;
         return trim(mb_substr($text,0,30000).$guard);
     }
+    private function cleanModelOutput(string $text):string
+    {
+        // The application appends one authoritative asset-reference list.
+        // Remove standalone copies from the model; preserve scene/action
+        // sentences even if the model incorrectly mentions a missing upload.
+        $lines=preg_split('/\R/u',$text)?:[$text];
+        $output=[];
+        foreach($lines as $line){
+            $trimmed=trim($line);
+            if(preg_match('/^(?:[-*]\s*)?请提供[「“"][^」”"]+[」”"]图片(?:（[^）]*）)?[。.]?$/u',$trimmed))
+                continue;
+            if(preg_match('/^(?:本镜参考资产图片|参考资产图片要求)(?:[（(:：].*)?$/u',$trimmed))
+                continue;
+            $line=(string)preg_replace(
+                '/(?:尚未上传|未上传图片|缺少参考图|没有上传)/u',
+                '需要提供参考图片',$line
+            );
+            $output[]=$line;
+        }
+        return trim(implode("\n",$output));
+    }
+
 }
