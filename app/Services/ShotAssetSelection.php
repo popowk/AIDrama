@@ -68,6 +68,30 @@ final class ShotAssetSelection
         return $result;
     }
 
+    public static function projectReferences(int $projectId):array
+    {
+        $project=DB::table('projects')->where('id',$projectId)->first();
+        if(!$project)return [];
+        $assets=DB::table('assets')->where('project_id',$projectId)->get();
+        $shots=DB::table('shots')->where('project_id',$projectId)->orderBy('sequence')->get();
+        $selections=self::forProject($projectId,$shots,$assets);
+        $lookup=$assets->keyBy('id');
+        $result=[];
+        foreach($shots as $shot){
+            $refs=[];
+            foreach($selections[(string)$shot->id]['selected_ids']??[] as $assetId){
+                $asset=$lookup->get($assetId);
+                if(!$asset||$asset->is_archived)continue;
+                $refs[]=[
+                    'id'=>(int)$asset->id,'name'=>$asset->name,'type'=>$asset->type,
+                    'required'=>true,'direct'=>true,'has_image'=>!empty($asset->file_path),
+                ];
+            }
+            $result[(string)$shot->id]=$refs;
+        }
+        return $result;
+    }
+
     public static function references(object $project,object $shot,?array $ids=null):array
     {
         if($ids===null){
