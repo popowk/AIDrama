@@ -11,17 +11,35 @@ final class AssetReferencePicker
 {
     public static function list(object $project,object $shot):array
     {
+        $assets=DB::table('assets')->where('project_id',$project->id)
+            ->orderBy('id')->get(['type','name','description','source_kind','file_path','is_archived']);
+        return self::fromAssets($assets,$shot);
+    }
+
+    /** Computes all reference previews with just two project-wide queries. */
+    public static function forProject(int $projectId):array
+    {
+        $assets=DB::table('assets')->where('project_id',$projectId)
+            ->orderBy('id')->get(['type','name','description','source_kind','file_path','is_archived']);
+        $shots=DB::table('shots')->where('project_id',$projectId)
+            ->orderBy('sequence')->get(['id','title','visual','dialogue','action_before']);
+        $result=[];
+        foreach($shots as $shot)
+            $result[(string)$shot->id]=self::fromAssets($assets,$shot);
+        return $result;
+    }
+
+    public static function fromAssets(iterable $assets,object $shot):array
+    {
         $content=self::normalized(
             (string)($shot->title??'').' '.(string)($shot->visual??'').' '.
             (string)($shot->dialogue??'').' '.(string)($shot->action_before??'')
         );
         if($content==='')return [];
 
-        $assets=DB::table('assets')->where('project_id',$project->id)
-            ->where('is_archived',false)->orderBy('id')
-            ->get(['type','name','description','source_kind','file_path']);
         $matched=[];
         foreach($assets as $asset){
+            if((bool)($asset->is_archived??false))continue;
             $name=trim((string)$asset->name);
             $canonical=self::normalized($name);
             if($canonical==='')continue;
