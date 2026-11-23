@@ -124,6 +124,20 @@ try {
             'reject a missing explicitly named speaker rather than saving incomplete result');
     }
 
+    // S01/S02 and 镜头1 are shot IDs, not people speaking; a genuine
+    // silent establishing shot must still be accepted.
+    Http::swap(new \Illuminate\Http\Client\Factory());
+    Http::fake(['https://api.example.com/*'=>Http::response([
+        'choices'=>[['message'=>['content'=>json_encode([
+            'script_mode'=>'mixed','shots'=>[$silent],'assets'=>[],
+        ],JSON_UNESCAPED_UNICODE)]]],
+    ],200)]);
+    $silentScene=$engine->generate("S01：大棚环境建立镜头\n镜头1：白天全景没有对白",
+        '3D国风动画',15);
+    assertSpeech(count($silentScene['shots'])===1 &&
+        $silentScene['shots'][0]['dialogue']==='',
+        'numbered storyboard metadata must not be misread as named speakers');
+
     assertSpeech(str_contains(PromptPresets::defaultText('script'),'dialogue') &&
         str_contains(PromptPresets::defaultText('script'),'人物之间') &&
         str_contains(PromptPresets::defaultText('seedance'),'不生成字幕'),
