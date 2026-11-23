@@ -170,6 +170,11 @@ class AssetController
     public function generate(int $id,int $asset,ImageEngine $engine)
     {
         [$project,$record]=$this->find($id,$asset);
+        if($project->status==='generating')
+            return response()->json([
+                'status'=>'error',
+                'error'=>'正在生成分镜或扩写剧本，请完成后再提交图片任务，避免资产引用变更。',
+            ],409);
         if((bool)($record->is_archived??false))
             return response()->json(['error'=>'此资产已移除，请先恢复再生成图片。'],422);
         if(AssetOrigin::needsUpload($record->type,$record->name,
