@@ -84,6 +84,12 @@ final class ShotContinuity
             self::actors($previous['characters']??[]),
             self::actors($current['characters']??[])
         )));
+        if(is_array($previous['asset_names']??null)||is_array($current['asset_names']??null)){
+            $previous['asset_names']=array_values(array_unique(array_filter(array_merge(
+                is_array($previous['asset_names']??null)?$previous['asset_names']:[],
+                is_array($current['asset_names']??null)?$current['asset_names']:[]
+            ))));
+        }
         return $previous;
     }
 
