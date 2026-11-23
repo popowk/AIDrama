@@ -29,6 +29,7 @@ jobs:
           node tests/inline-project-ui.test.cjs
           node tests/shot-assets-ui.test.cjs
           node tests/asset-preview-layout.test.cjs
+          node tests/asset-large-preview.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-saves-smoke.php
           node tests/inline-settings-ui.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/inline-settings-smoke.php
@@ -36,6 +37,7 @@ jobs:
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/short-video-continuity-and-assets-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/shot-asset-choices-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/conversation-delivery-smoke.php
+          DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/storyboard-speech-smoke.php
           node tests/storyboard-state.test.cjs
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/prompt-optional-smoke.php
           DB_CONNECTION=sqlite DB_DATABASE="$PWD/database/database.sqlite" php tests/storyboard-async-smoke.php

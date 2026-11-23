@@ -153,16 +153,19 @@
 <div class="asset-preview">
 <div class="asset-preview-visual">
 @if($a->file_path)
-<button type="button" class="asset-preview-trigger"
+<a class="asset-preview-trigger"
+    href="{{ route('asset.file',[$project->id,$a->id]) }}"
+    target="_blank" rel="noopener noreferrer"
     data-preview-src="{{ route('asset.file',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}"
     data-preview-name="{{ $a->name }}"
     data-download-url="{{ route('asset.download',[$project->id,$a->id]) }}"
-    onclick="openAssetPreview(this)"
-    aria-label="预览{{ $a->name }}参考图">
+    onclick="return openAssetPreview(this,event)"
+    aria-label="预览{{ $a->name }}参考图（弹窗失败则新窗口打开）">
     <img src="{{ route('asset.thumbnail',[$project->id,$a->id]) }}?v={{ substr(sha1((string)$a->file_path),0,14) }}" alt="{{ $a->name }}缩略图" loading="lazy" decoding="async" width="176" height="132"
          style="display:block;width:100%;max-width:176px;height:132px;max-height:132px;object-fit:contain;">
     <span class="asset-preview-label">点击放大预览</span>
-</button>
+</a>
+<a class="asset-open-original" href="{{ route('asset.file',[$project->id,$a->id]) }}" target="_blank" rel="noopener noreferrer">在新窗口打开原图</a>
 <a class="button outline asset-download-button" href="{{ route('asset.download',[$project->id,$a->id]) }}">↓ 下载原图</a>
 @else
 <div class="asset-placeholder">{{ $a->source_kind==='upload'?'等待客户上传':'等待生成图片' }}</div>
@@ -203,6 +206,7 @@
     </div>
     <div class="asset-lightbox-actions">
         <span class="muted small">默认完整显示 · 可切换 100% 原始尺寸 · 按 Esc 关闭</span>
+        <a id="asset-lightbox-original" class="button ghost" href="#" target="_blank" rel="noopener noreferrer">新窗口查看原图</a>
         <a id="asset-lightbox-download" class="button outline" href="#">↓ 下载原图（资产名称）</a>
     </div>
 </dialog>
@@ -539,23 +543,36 @@ async function retryLastGeneration(button){
 if(initialGeneration==='generating')ensureGenerationPolling();
 else if(initialGeneration==='error')refreshGeneration();
 // Native dialog keeps the full-resolution image out of the asset list.
-function openAssetPreview(button){
+function openAssetPreview(button,event){
+  // This returns true only when the native image link should be followed.
+  // A real href always remains available even if some JS or <dialog> API fails.
   const dialog=document.getElementById('asset-lightbox');
   const image=document.getElementById('asset-lightbox-image');
   const title=document.getElementById('asset-lightbox-title');
   const download=document.getElementById('asset-lightbox-download');
-  const url=button.dataset.previewSrc;
-  if(!dialog||!image||!title||!download||!url)return;
-  const name=button.dataset.previewName||'参考图';
-  dialog.dataset.mode='fit';
-  const modeButton=document.getElementById('asset-lightbox-mode');
-  if(modeButton)modeButton.textContent='100% 原始尺寸';
-  title.textContent=name+' · 原图预览';
-  image.alt=name+'参考图';
-  image.src=url;
-  download.href=button.dataset.downloadUrl||url;
-  if(typeof dialog.showModal==='function')dialog.showModal();
-  else window.open(url,'_blank','noopener');
+  const url=siteRoute(button.dataset.previewSrc||button.href);
+  if(!dialog||!image||!title||!download||!url||typeof dialog.showModal!=='function')
+    return true;
+  if(event&&(event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||
+     (typeof event.button==='number'&&event.button!==0)))return true;
+  try{
+    if(dialog.open)dialog.close();
+    dialog.dataset.mode='fit';
+    const modeButton=document.getElementById('asset-lightbox-mode');
+    if(modeButton)modeButton.textContent='100% 原始尺寸';
+    const name=button.dataset.previewName||'参考图';
+    title.textContent=name+' · 原图预览';
+    image.alt=name+'参考图';
+    image.src=url;
+    download.href=button.dataset.downloadUrl||url;
+    const original=document.getElementById('asset-lightbox-original');
+    if(original)original.href=url;
+    dialog.showModal();
+    return false;
+  }catch(error){
+    // A user can still open the authenticated original by following href.
+    return true;
+  }
 }
 function toggleAssetPreviewMode(){
   const dialog=document.getElementById('asset-lightbox');
@@ -830,8 +847,10 @@ function updateAssetPreview(id,result){
   const downloadUrl=siteRoute(result.download_url);
   if(!imageUrl||!thumbnailUrl||!downloadUrl)return;
   const cache='?v='+Date.now();
-  const trigger=document.createElement('button');
-  trigger.type='button';trigger.className='asset-preview-trigger';
+  const trigger=document.createElement('a');
+  trigger.className='asset-preview-trigger';
+  trigger.href=imageUrl;trigger.target='_blank';
+  trigger.rel='noopener noreferrer';
   trigger.dataset.previewSrc=imageUrl+cache;
   trigger.dataset.previewName=shell.dataset.assetName||'资产参考图';
   trigger.dataset.downloadUrl=downloadUrl;
@@ -843,11 +862,18 @@ function updateAssetPreview(id,result){
   const label=document.createElement('span');
   label.className='asset-preview-label';label.textContent='点击放大预览';
   trigger.append(img,label);
-  trigger.addEventListener('click',()=>openAssetPreview(trigger));
+  trigger.addEventListener('click',event=>{
+    if(!openAssetPreview(trigger,event))event.preventDefault();
+  });
+  const original=document.createElement('a');
+  original.className='asset-open-original';
+  original.href=imageUrl;
+  original.target='_blank';original.rel='noopener noreferrer';
+  original.textContent='在新窗口打开原图';
   const link=document.createElement('a');
   link.className='button outline asset-download-button';
   link.href=downloadUrl;link.textContent='↓ 下载原图';
-  preview.replaceChildren(trigger,link);
+  preview.replaceChildren(trigger,original,link);
   const button=card.querySelector('.asset-generate');
   if(button){button.dataset.hasImage='1';button.textContent='重新生成图片';}
   const upload=card.querySelector('.asset-upload button[type="submit"]');
