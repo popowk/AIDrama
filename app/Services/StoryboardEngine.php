@@ -132,7 +132,10 @@ class StoryboardEngine
         $expected=[];
         foreach($matches as $match){
             $speaker=trim($match[1]);$speech=trim($match[2]);
-            if(in_array($speaker,$meta,true)||mb_strlen($speech)<2)continue;
+            // Storyboard IDs such as S01: or 镜头1: are metadata, not voices.
+            if(in_array($speaker,$meta,true)||
+                preg_match('/^(?:(?:s|sc|shot|p)\\d+|(?:镜头|画面|场次|分镜|段落)\\d+)$/iu',$speaker)||
+                mb_strlen($speech)<2)continue;
             $expected[$speaker]=true;
         }
         if(!$expected)return;
