@@ -138,6 +138,38 @@ try {
         $silentScene['shots'][0]['dialogue']==='',
         'numbered storyboard metadata must not be misread as named speakers');
 
+    // Regression: a screenplay can prefix an action with "悟空一把拽住师父：".
+    // That entire action phrase is NOT a character name. The old overly broad
+    // pattern falsely claimed this speaker was missing, blocking every retry.
+    Http::swap(new \Illuminate\Http\Client\Factory());
+    $actionScene=$shot;
+    $actionScene['visual']='悟空一把拽住师父，八戒上前帮忙。';
+    $actionScene['dialogue']="悟空：师父，您听俺说。\n师父：别拦着我。";
+    Http::fake(['https://api.example.com/*'=>Http::response([
+        'choices'=>[['message'=>['content'=>json_encode([
+            'script_mode'=>'mixed','shots'=>[$actionScene],'assets'=>[],
+        ],JSON_UNESCAPED_UNICODE)]]],
+    ],200)]);
+    $sourceWithAction="悟空一把拽住师父：八戒在旁边看着。\n悟空：师父，您听俺说。\n师父：别拦着我。";
+    $actionResult=$engine->generate($sourceWithAction,'3D国风动画',15);
+    assertSpeech(count($actionResult['shots'])>=1 &&
+        str_contains(implode("\n",array_column($actionResult['shots'],'dialogue')),'师父：别拦着我。'),
+        'action prefix is not a missing speaker and valid dialogues are kept');
+
+    Http::swap(new \Illuminate\Http\Client\Factory());
+    $actionOnly=$shot;
+    $actionOnly['dialogue']='师父：别拦着我。';
+    Http::fake(['https://api.example.com/*'=>Http::response([
+        'choices'=>[['message'=>['content'=>json_encode([
+            'script_mode'=>'mixed','shots'=>[$actionOnly],'assets'=>[],
+        ],JSON_UNESCAPED_UNICODE)]]],
+    ],200)]);
+    $actionOnlyResult=$engine->generate(
+        "悟空一把拽住师父：他的衣袖被风吹起。\n悟空拽住：动作特写。\n师父：别拦着我。",
+        '3D国风动画',15);
+    assertSpeech(count($actionOnlyResult['shots'])===1,
+        'both long and short action descriptions are excluded from speaker checks');
+
     assertSpeech(str_contains(PromptPresets::defaultText('script'),'dialogue') &&
         str_contains(PromptPresets::defaultText('script'),'人物之间') &&
         str_contains(PromptPresets::defaultText('seedance'),'不生成字幕'),
