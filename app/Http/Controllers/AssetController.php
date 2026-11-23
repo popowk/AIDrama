@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Services\AssetOrigin;
 use App\Services\AssetImagePrompt;
 use App\Services\AssetReferencePicker;
+use App\Services\ShotAssetSelection;
 use App\Services\ImageEngine;
 use App\Services\ChatgptImageTasks;
 use Illuminate\Http\Request;
@@ -45,7 +46,7 @@ class AssetController
         ]);
         return $this->saveReply('已折叠「'.$record->name.'」，图片和提示词均已保留。',
             ['asset_id'=>$asset,'archived'=>true,
-                'shot_references'=>AssetReferencePicker::forProject($id)],$fallback);
+                'shot_references'=>ShotAssetSelection::projectReferences($id)],$fallback);
     }
 
     public function restore(int $id,int $asset)
@@ -59,7 +60,7 @@ class AssetController
         ]);
         return $this->saveReply('已恢复资产「'.$record->name.'」，原图与提示词保持不变。',
             ['asset_id'=>$asset,'archived'=>false,
-                'shot_references'=>AssetReferencePicker::forProject($id)],$fallback);
+                'shot_references'=>ShotAssetSelection::projectReferences($id)],$fallback);
     }
 
     public function savePrompt(Request $request,int $id,int $asset)
