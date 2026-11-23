@@ -117,7 +117,8 @@ final class ProjectSnapshots
             $maxSeconds=0;
             foreach($data['shots'] as $shot)
                 $maxSeconds=max($maxSeconds,(int)($shot['duration_seconds']??0));
-            $shotLimit=$maxSeconds>15?30:15;
+            $savedLimit=(int)($settings['shot_limit']??15);
+            $shotLimit=($savedLimit===30||$maxSeconds>15)?30:15;
             DB::table('projects')->where('id',$projectId)->update([
                 'status'=>count($data['shots'])?'ready':'draft',
                 'shot_limit'=>$shotLimit,
