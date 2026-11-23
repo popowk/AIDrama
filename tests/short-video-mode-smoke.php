@@ -87,9 +87,10 @@ try {
           mb_strpos($compact['shots'][0]['dialogue'],'悟空：'),
         'two speakers must remain in original order within one shot');
     assertShort($compact['shots'][0]['duration_seconds']<=15,'merged shot under selected limit');
-    assertShort(str_contains($compact['shots'][0]['visual'],'皱眉')&&
-        str_contains($compact['shots'][0]['visual'],'举起手臂'),
-        'small expressions/action must overlap dialogue instead of becoming extra cuts');
+    assertShort(str_contains($compact['shots'][0]['action_before'],'皱眉')&&
+        str_contains($compact['shots'][0]['action_before'],'举起手臂')&&
+        $compact['shots'][0]['visual']==="大棚边八戒看马路\n悟空亮出中维AOV太阳能球机",
+        'original action and scene text retained without rewriting or invented overlap instructions');
 
     $story=new StoryboardEngine();
     $story->setMode('mixed');
