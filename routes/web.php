@@ -45,6 +45,10 @@ Route::middleware(RequireAdmin::class)->group(function() {
         ->middleware('throttle:4,1')->whereNumber('id')->whereNumber('snapshot')->name('project.snapshot.restore');
     Route::post('/projects/{id}/generation/run',[StudioController::class,'runGeneration'])->middleware('throttle:10,1')->whereNumber('id')->name('generation.run');
     Route::post('/projects/{id}/shots/{shot}',[StudioController::class,'saveShot'])->whereNumber('id')->whereNumber('shot')->name('shot.save');
+    Route::post('/projects/{id}/shots/{shot}/assets',[StudioController::class,'saveShotAssets'])
+        ->middleware('throttle:90,1')->whereNumber('id')->whereNumber('shot')->name('shot.assets.save');
+    Route::post('/projects/{id}/shots/{shot}/assets/recognize',[StudioController::class,'recognizeShotAssets'])
+        ->middleware('throttle:8,1')->whereNumber('id')->whereNumber('shot')->name('shot.assets.recognize');
     Route::post('/projects/{id}/shots/{shot}/prompt',[StudioController::class,'prompt'])->middleware('throttle:12,1')->whereNumber('id')->whereNumber('shot')->name('shot.prompt');
     Route::get('/projects/{id}/export',[StudioController::class,'export'])->whereNumber('id')->name('project.export');
     Route::get('/updates',[UpdateController::class,'index'])->name('updates.index');
