@@ -172,7 +172,7 @@ try {
     // AI/network/JSON errors must not replace previous manual selections.
     Http::swap(new \Illuminate\Http\Client\Factory());
     Http::fake(['https://api.example.com/*'=>Http::response([
-        'choices'=>[['message'=>['content'=>'invalid AI JSON']]
+        'choices'=>[['message'=>['content'=>'invalid AI JSON']]]
     ],200)]);
     $failed=$controller->recognizeShotAssets(reqChoices(),$projectId,$shotId);
     assertChoices($failed->getStatusCode()===422 &&
